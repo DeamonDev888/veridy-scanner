@@ -50,9 +50,11 @@ impl FfufAuditor {
                 wordlist,
                 "-ac",
                 "-mc",
-                "200,301,302,403",
+                "200,204",
                 "-fc",
-                "404",
+                "404,403,301,302",
+                "-fs",
+                "0",
                 "-maxtime",
                 "90",
                 "-rate",
@@ -101,44 +103,63 @@ impl FfufAuditor {
     }
 
     pub(crate) fn parse_json(json: &str) -> Vec<ExposedEndpoint> {
+        // Parsing avec serde_json : le JSON ffuf imbricre "input":{"FUZZ":...}
+        // dans chaque resultat — le decoupage manuel par accolades confondait
+        // l'objet parent et son fils (url systematiquement vide).
         let mut list = Vec::new();
-
-        if let Some(res_pos) = json.find("\"results\":") {
-            let rest = json[res_pos + 10..].trim_start();
-            if let Some(rest_after_bracket) = rest.strip_prefix('[') {
-                if let Some(arr_end) = rest_after_bracket.find(']') {
-                    let chunk = &rest_after_bracket[..arr_end];
-                    let mut sub_rest = chunk;
-                    while let Some(obj_start) = sub_rest.find('{') {
-                        sub_rest = &sub_rest[obj_start..];
-                        let obj_end = match sub_rest.find('}') {
-                            Some(e) => e + 1,
-                            None => break,
-                        };
-                        let obj_str = &sub_rest[..obj_end];
-                        sub_rest = &sub_rest[obj_end..];
-
-                        let url = crate::utils::extract_json_str(obj_str, "url").unwrap_or_default();
-                        let path = crate::utils::extract_json_str(obj_str, "FUZZ").unwrap_or_default();
-                        let status =
-                            crate::utils::extract_json_num::<u16>(obj_str, "status").unwrap_or(200);
-                        let length =
-                            crate::utils::extract_json_num::<usize>(obj_str, "length").unwrap_or(0);
-
-                        if !path.is_empty() {
-                            list.push(ExposedEndpoint {
-                                path,
-                                status,
-                                length,
-                                url,
-                            });
-                        }
-                    }
-                }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+            return list;
+        };
+        let Some(results) = v.get("results").and_then(|r| r.as_array()) else {
+            return list;
+        };
+        for r in results {
+            // Vrai format ffuf : "input":{"FUZZ": "..."} — ancien format
+            // plat "FUZZ": "..." accepté pour rétrocompatibilité.
+            let path = r
+                .pointer("/input/FUZZ")
+                .and_then(|x| x.as_str())
+                .or_else(|| r.get("FUZZ").and_then(|x| x.as_str()))
+                .unwrap_or_default()
+                .to_string();
+            if path.is_empty() {
+                continue;
             }
+            list.push(ExposedEndpoint {
+                url: r.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                status: r.get("status").and_then(|x| x.as_u64()).unwrap_or(0) as u16,
+                length: r.get("length").and_then(|x| x.as_u64()).unwrap_or(0) as usize,
+                path,
+            });
         }
-
         list
+    }
+
+    /// Vérifie qu'une réponse 200 contient BIEN le contenu attendu pour un
+    /// chemin sensible — sinon c'est un soft-404 / catch-all (faux positif).
+    /// Fetch GET court (timeout 10 s) sur l'URL rapportée par ffuf.
+    fn response_matches_signature(path: &str, url: &str) -> Option<bool> {
+        if url.is_empty() {
+            return None; // pas vérifiable
+        }
+        let body = crate::utils::run_tool("curl", &["-s", "-L", "--max-time", "10", url], 15)?
+            ;
+        let body = String::from_utf8_lossy(&body.stdout).to_string();
+        let p = path.to_lowercase();
+        let sigs: &[&str] = if p.starts_with(".env") {
+            &["DB_PASSWORD=", "APP_KEY=", "API_KEY=", "DATABASE_URL=", "SECRET_KEY="]
+        } else if p.starts_with(".git/config") || p.starts_with(".git") {
+            &["[core]", "[remote \"origin\"]", "repositoryformatversion"]
+        } else if p.starts_with(".git/head") {
+            &["ref: refs/"]
+        } else if p.contains("backup") || p.ends_with(".sql") {
+            &["INSERT INTO", "CREATE TABLE", "DROP TABLE", "-- MySQL dump"]
+        } else if p.contains("config") {
+            &["DB_PASSWORD", "database", "password", "define('", "$cfg", "<?php"]
+        } else {
+            return None; // chemin non critique : pas de signature
+        };
+        Some(sigs.iter().any(|sig| body.contains(sig)))
     }
 
     pub fn to_findings(&self, res: &FfufAuditResult) -> Vec<SecurityFinding> {
@@ -165,13 +186,27 @@ impl FfufAuditor {
         }
 
         for ep in &endpoints {
-            let (severity, rec) = if ep.path.starts_with(".git")
+            // Chemin critique → CONFIRMER par le contenu avant de crier CRITICAL.
+            // Un 200 catch-all (soft-404) sur /.env est un faux positif classique.
+            let critical_candidate = ep.path.starts_with(".git")
                 || ep.path.starts_with(".env")
                 || ep.path.contains("backup")
                 || ep.path.contains("config")
-                || ep.path.ends_with(".sql")
-            {
-                ("CRITICAL", "Restreindre immédiatement l'accès à ce fichier sensible ou le supprimer du répertoire racine public.")
+                || ep.path.ends_with(".sql");
+            let content_confirmed = if critical_candidate {
+                match Self::response_matches_signature(&ep.path, &ep.url) {
+                    Some(true) => true,   // contenu sensible réellement servi
+                    Some(false) => false, // soft-404 / page générique : déclasser
+                    None => false,        // non vérifiable : prudence → pas CRITICAL
+                }
+            } else {
+                false
+            };
+
+            let (severity, rec) = if content_confirmed {
+                ("CRITICAL", "Contenu sensible CONFIRMÉ servi par le serveur : restreindre immédiatement l'accès et révoquer les secrets exposés.")
+            } else if critical_candidate {
+                ("INFO", "Chemin sensible accessible en HTTP 200 mais contenu non conforme (soft-404 probable / catch-all ou page générique). Vérification manuelle conseillée.")
             } else if ep.status == 200 {
                 ("LOW", "Vérifier que ce chemin public ne divulgue aucune donnée interne confidentielle.")
             } else {

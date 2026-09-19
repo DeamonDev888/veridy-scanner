@@ -107,7 +107,13 @@ impl DnsreconAuditor {
         use crate::modules::findings::SecurityFinding;
         let mut findings = Vec::new();
 
+        // Déduplication : dnsrecon interroge chaque NS plusieurs fois → le même
+        // constat (serveur, version) ne doit apparaître qu'une seule fois.
+        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
         for (target, version) in &res.bind_versions {
+            if !seen.insert(((**target).to_string(), (**version).to_string())) {
+                continue; // doublon déjà émis
+            }
             findings.push(SecurityFinding {
                 severity: "LOW",
                 category: "DNS",

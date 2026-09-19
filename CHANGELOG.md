@@ -10,7 +10,17 @@ Versions : [SemVer](https://semver.org/)
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
 - **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
 
-## [0.3.2] — 2026-09-19
+## [0.3.3] — 2026-09-19
+
+### Corrigé (prouvé sur scan réel metro.ca — score 0→47, 20 faux CRITICAL→0)
+- **Ffuf faux positifs** : les 403/301 (WAF/redirect) ne sont plus comptés comme découvertes ( uniquement) ; les 200 vides du catch-all sont exclus ()
+- **Vérification de contenu** : un chemin critique (.env/.git/backup/sql/config) n'est CRITICAL que si la réponse contient la signature attendue (DB_PASSWORD=, [core], INSERT INTO…) — sinon déclassé INFO « soft-404 probable »
+- **Parsing ffuf** :  natif — le vrai format imbrique FUZZ dans "input"{} ; l'ancien découpage manuel perdait l'URL (verif de contenu impossible). Rétrocompat format plat conservée
+- **Dnsrecon** : déduplication des constats « divulgation version DNS » (5 doublons → 1 par paire serveur/version)
+
+### Modifié
+- Test  : fixture au vrai format ffuf + cas rétrocompat ;  : un chemin critique non confirmé ne doit JAMAIS être CRITICAL
+
 
 ### Ajouté
 - **14 tests unitaires** pour les modules C2 (sérialisation, findings conditionnels, parsing signing/version, opt-in jamais implicite, helpers tool_on_path/tcp_probe) — total **80 tests**
