@@ -10,6 +10,16 @@ Versions : [SemVer](https://semver.org/)
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
 - **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
 
+## [0.3.5] — 2026-09-19
+
+### Corrigé (audit metro.ca + 3 sous-rapports parallèles, 2026-09-19)
+- **Empire database_ready** : vérification RÉELLE via  + check exit code + parse u64 + map n>0 — fini le faux positif avant  (constaté en live par le test C2 : DB vide = rapport mensonger)
+- **http.rs headers** :  remplacé par  (follow redirects) — corrige le faux positif XFO + sur-déclarations CSP/HSTS détecté sur metro.ca (le scanner échantillonnait le 301 apex au lieu de la page finale www)
+- **Chisel version** :  (qui n'a pas de chaîne 'version') →  — plus de "Chisel ?" dans les summary
+
+### Modifié
+- README + CHANGELOG synchronisés sur les corrections d'audit
+
 ## [0.3.4] — 2026-09-19
 
 ### Corrigé

@@ -30,8 +30,31 @@ impl EmpireAuditor {
         }
 
         // DB prête ? (mariadb/mysql + base empire créée par `powershell-empire setup`)
-        result.database_ready =
-            crate::utils::run_tool("mysql", &["-u", "root", "-e", "USE empire;"], 10).is_some();
+        // DB prête ? Vérification RÉELLE :
+        // - mysql retourne success
+        // - la base 'empire' existe ET contient des tables (>0)
+        // (sur Kali l'auth root est unix_socket → sudo mysql)
+        let db_check = crate::utils::run_tool(
+            "sudo",
+            &[
+                "-n",
+                "mysql",
+                "-N",
+                "-e",
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='empire';",
+            ],
+            10,
+        );
+        result.database_ready = db_check
+            .filter(|o| o.status.success())
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .trim()
+                    .parse::<u64>()
+                    .ok()
+            })
+            .map(|n| n > 0)
+            .unwrap_or(false);
 
         // Serveur REST actif ? (port 1337 par défaut)
         result.server_running = crate::utils::tcp_probe("127.0.0.1", 1337);

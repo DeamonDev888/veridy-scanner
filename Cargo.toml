@@ -1,48 +1,12 @@
 [package]
 name = "veridy_scanner"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
-rust-version = "1.84"
 authors = ["Veridy <contact@veridy.ca>"]
-description = "Offensive surface scanner — DNS, ports, TLS, HTTP, subdomains + 22 Kali/C2 tool wrappers (7 C2/post-exploitation)"
-license = "Apache-2.0"
-# license-file inutile : license = "Apache-2.0" suffit (LICENSE a la racine)
-readme = "README.cargo.md"
-homepage = "https://github.com/DeamonDev888/veridy-scanner"
-repository = "https://github.com/DeamonDev888/veridy-scanner"
-documentation = "https://docs.rs/veridy_scanner"
-keywords = [
-    "security",
-    "scanner",
-    "offensive",
-    "reconnaissance",
-    "kali",
-]
-categories = [
-    "command-line-utilities",
-    "network-programming",
-    "security",
-]
-exclude = [
-    ".github",
-    "**/.git",
-    "target",
-    "**/*.bak",
-    "**/*.bak2",
-    "**/*.bak3",
-    "**/*.swp",
-    "**/.vscode",
-    "**/.idea",
-]
+description = "Scanner de surface modulaire pour veridy.ca (DNS, Ports, HTTP headers, TLS)"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 clap = { version = "4.6.7", features = ["derive"] }
 regex = "1"
-
-[profile.release]
-opt-level = 3
-lto = "thin"
-codegen-units = 1
-strip = "symbols"

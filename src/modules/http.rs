@@ -71,7 +71,7 @@ impl HttpAuditor {
         // 1. Test de redirection HTTP -> HTTPS sur le port 80
         let http_url = format!("http://{}/", domain);
         if let Ok(output) = Command::new("curl")
-            .args(["-s", "-I", "--max-time", "4", &http_url])
+            .args(["-s", "-I", "-L", "--max-time", "4", &http_url])
             .output()
         {
             let out = String::from_utf8_lossy(&output.stdout);
@@ -90,7 +90,7 @@ impl HttpAuditor {
         // 2. Récupération des en-têtes et cookies HTTPS sur le port 443
         let https_url = format!("https://{}/", domain);
         if let Ok(output) = Command::new("curl")
-            .args(["-s", "-I", "--max-time", "5", &https_url])
+            .args(["-s", "-I", "-L", "--max-time", "5", &https_url])
             .output()
         {
             let out = String::from_utf8_lossy(&output.stdout);

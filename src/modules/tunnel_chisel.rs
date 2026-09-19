@@ -31,17 +31,15 @@ impl ChiselAuditor {
             return result;
         }
 
-        // help contient la version
-        if let Some(o) = crate::utils::run_tool("chisel", &["--help"], 15) {
+        // Version : chisel --help ne contient pas "version" (jpillora/chisel).
+        // On tente 'chisel version' qui affiche typiquement la version Go.
+        if let Some(o) = crate::utils::run_tool("chisel", &["version"], 15) {
             let txt = String::from_utf8_lossy(&o.stdout).to_string()
                 + &String::from_utf8_lossy(&o.stderr);
-            for line in txt.lines().take(3) {
-                if line.contains("version") {
-                    result.version = Some(line.trim().to_string());
-                    break;
-                }
+            if let Some(line) = txt.lines().next() {
+                result.version = Some(line.trim().to_string());
+                result.raw_output = txt.lines().take(3).collect::<Vec<_>>().join("\n");
             }
-            result.raw_output = txt.lines().take(3).collect::<Vec<_>>().join("\n");
         }
 
         // Démo locale : serveur chisel sur port éphémère 127.0.0.1:18124, 4 s max
