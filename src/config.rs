@@ -590,20 +590,20 @@ impl Config {
 /// Le scanner refuse de démarrer s'ils sont absents — pas de scan léger
 /// silencieux pour le moment : un environnement incomplet = audit trompeur.
 pub const REQUIRED_KALI_TOOLS: &[(&str, &str)] = &[
-    ("nmap", "apt install nmap"),
-    ("nuclei", "apt install nuclei  |  https://github.com/projectdiscovery/nuclei"),
-    ("nikto", "apt install nikto"),
-    ("wafw00f", "apt install wafw00f  |  pip install wafw00f"),
-    ("whatweb", "apt install whatweb  |  gem install whatweb"),
-    ("sslscan", "apt install sslscan"),
-    ("dnstwist", "apt install dnstwist  |  pip install dnstwist"),
-    ("ffuf", "apt install ffuf  |  https://github.com/ffuf/ffuf"),
-    ("dnsrecon", "apt install dnsrecon"),
-    ("theHarvester", "apt install theharvester"),
-    ("obscura", "Voir README — Installation"),
-    ("httpx", "go install github.com/projectdiscovery/httpx@latest"),
+    ("nmap", "natif Kali — apt install nmap"),
+    ("nuclei", "natif Kali — apt install nuclei"),
+    ("nikto", "natif Kali — apt install nikto"),
+    ("wafw00f", "natif Kali — apt install wafw00f"),
+    ("whatweb", "natif Kali — apt install whatweb"),
+    ("sslscan", "natif Kali — apt install sslscan"),
+    ("dnstwist", "natif Kali — apt install dnstwist"),
+    ("ffuf", "natif Kali — apt install ffuf"),
+    ("dnsrecon", "natif Kali — apt install dnsrecon"),
+    ("theHarvester", "natif Kali — apt install theharvester"),
+    ("obscura", "voir README du projet — Installation"),
+    ("httpx", "go install github.com/projectdiscovery/httpx/cmd/httpx@latest (binaire ProjectDiscovery, pas le paquet Python homonyme)"),
     ("rustscan", "go install github.com/RustScan/RustScan@latest"),
-    ("subfinder", "go install github.com/projectdiscovery/subfinder/v2@latest"),
+    ("subfinder", "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"),
 ];
 
 /// Outils requis absents du PATH, avec leur conseil d'installation.

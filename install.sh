@@ -13,24 +13,22 @@ die()  { echo -e "${R}[✗]${N} $*"; exit 1; }
 
 # ----- Vérifs préliminaires -----
 [ "$(id -u)" -eq 0 ] || die "Re-lancer avec sudo : sudo ./install.sh"
-info "Système : $(uname -m) $(. /etc/os-release && echo "$PRETTY_NAME")"
+. /etc/os-release
+info "Système : $(uname -m) ${PRETTY_NAME:-inconnu}"
 
-# ----- Détection gestionnaire de paquets -----
-if command -v apt >/dev/null 2>&1; then
-    PKG=apt
-    UPDATE="apt update -y"
-    INSTALL="apt install -y"
-elif command -v dnf >/dev/null 2>&1; then
-    PKG=dnf
-    UPDATE="dnf check-update || true"
-    INSTALL="dnf install -y"
-elif command -v pacman >/dev/null 2>&1; then
-    PKG=pacman
-    UPDATE="pacman -Sy"
-    INSTALL="pacman -S --noconfirm"
-else
-    die "Gestionnaire non supporté (apt/dnf/pacman requis)"
+# ----- veridy_scanner est une application KALI LINUX : refus explicite ailleurs -----
+if [ "${ID:-}" != "kali" ]; then
+    die "Kali Linux requis — système détecté : ${PRETTY_NAME:-inconnu}.
+  veridy_scanner orchestre des outils pré-installés sur Kali uniquement.
+  Installez Kali : https://www.kali.org/get-kali/"
 fi
+ok "Kali Linux confirmé — outils d'audit natifs attendus"
+
+# ----- Gestionnaire : apt (Kali est Debian-based) -----
+command -v apt >/dev/null 2>&1 || die "apt introuvable — Kali Linux requis"
+PKG=apt
+UPDATE="apt update -y"
+INSTALL="apt install -y"
 info "Gestionnaire : $PKG"
 
 # ----- Choix du répertoire d'installation -----
@@ -59,49 +57,58 @@ case "$PKG" in
 esac
 ok "Dépendances système installées"
 
-# ----- 2. Outils Kali REQUIS (full scan par défaut) -----
-info "Installation des outils Kali REQUIS (full scan par défaut)…"
+# ----- 2. Outils Kali natifs : VÉRIFICATION + MISE À JOUR -----
+# Sur Kali, les outils d'audit sont pré-installés : on vérifie leur présence
+# et on les maintient à jour via les dépôts. Exceptions hors dépôts : Go tools.
+info "Vérification des outils Kali natifs (pré-installés sur Kali)…"
 KALI_TOOLS=(nmap nuclei nikto wafw00f whatweb sslscan dnstwist ffuf dnsrecon theharvester)
-GO_TOOLS=(httpx subfinder rustscan)
-MISSING=()
+
+MISSING=(); STALE=()
 for t in "${KALI_TOOLS[@]}"; do
-    if ! command -v "$t" >/dev/null 2>&1; then MISSING+=("$t"); fi
+    if command -v "$t" >/dev/null 2>&1; then STALE+=("$t"); else MISSING+=("$t"); fi
 done
-if [ ${#MISSING[@]} -gt 0 ]; then
-    warn "Outils absents : ${MISSING[*]} — installation via $PKG…"
-    case "$PKG" in
-        apt) $UPDATE; $INSTALL "${MISSING[@]}" || warn "Échec apt pour : ${MISSING[*]} — installer manuellement" ;;
-        dnf) $INSTALL "${MISSING[@]}" || warn "Échec dnf — installer manuellement" ;;
-        pacman) $INSTALL "${MISSING[@]}" || warn "Échec pacman — installer manuellement" ;;
-    esac
+
+# Mise à jour des outils présents (dépendances à jour)
+if [ ${#STALE[@]} -gt 0 ]; then
+    info "Mise à jour des outils natifs présents : ${STALE[*]}…"
+    $UPDATE >/dev/null 2>&1 || true
+    apt install -y --only-upgrade "${STALE[@]}" >/dev/null 2>&1         || warn "Upgrade partiel — vérifier : apt install --only-upgrade ${STALE[*]}"
 fi
-# Outils Go (ProjectDiscovery + RustScan) : requis, installés si Go présent
-for t in "${GO_TOOLS[@]}"; do
-    if ! command -v "$t" >/dev/null 2>&1; then
-        if command -v go >/dev/null 2>&1; then
-            info "Installation $t (go install)…"
-            case "$t" in
-                httpx)    go install github.com/projectdiscovery/httpx/v2/cmd/httpx@latest ;;
-                subfinder) go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest ;;
-                rustscan) go install github.com/RustScan/RustScan@latest ;;
-            esac
-            [ -d "$HOME/go/bin" ] && ln -sf "$HOME/go/bin/$t" /usr/local/bin/$t 2>/dev/null
-        else
-            warn "$t absent et Go non installé — requis pour le full scan :"
-            warn "  go install github.com/projectdiscovery/$( [ $t = rustscan ] && echo RustScan/RustScan || echo $t )@latest"
-        fi
-    fi
-done
-# Vérification finale REQUISE
+# Installation des outils absents (Kali épuré)
+if [ ${#MISSING[@]} -gt 0 ]; then
+    warn "Outils natifs absents (Kali inhabituel) : ${MISSING[*]} — installation…"
+    $UPDATE; $INSTALL "${MISSING[@]}" || warn "Échec pour : ${MISSING[*]} — voir README"
+fi
+
+# Exceptions hors dépôts : httpx/subfinder (ProjectDiscovery) + RustScan via Go
+command -v go >/dev/null 2>&1 || { info "Installation de Go (requis pour httpx/subfinder/rustscan)…"; $INSTALL golang-go || warn "Go non installé — httpx/subfinder/rustscan manquants"; }
+export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
+install_go_tool() {
+    # $1 = chemin go, $2 = nom binaire
+    info "Installation $2 (go install)…"
+    go install "$1@latest" 2>/dev/null || { warn "go install $2 échoué — commande : go install $1@latest"; return 1; }
+    [ -f "$HOME/go/bin/$2" ] && install -m 0755 "$HOME/go/bin/$2" "/usr/local/bin/$2" && ok "$2 → /usr/local/bin/$2"
+}
+command -v subfinder >/dev/null 2>&1 || install_go_tool github.com/projectdiscovery/subfinder/v2/cmd/subfinder subfinder
+command -v rustscan >/dev/null 2>&1 || install_go_tool github.com/RustScan/RustScan rustscan
+# httpx : le BON binaire (ProjectDiscovery) répond à -version.
+# Le paquet Python homonyme (/usr/bin/httpx, JA3) ne répond pas → on remplace.
+if ! httpx -version >/dev/null 2>&1; then
+    HTTPX_PATH=$(command -v httpx || true)
+    [ -n "$HTTPX_PATH" ] && warn "httpx incompatibles détecté ($HTTPX_PATH — outil Python homonyme) : remplacement…"
+    install_go_tool github.com/projectdiscovery/httpx/cmd/httpx httpx
+fi
+
+# Vérification finale REQUISE (le scanner refusera sinon de lancer le full scan)
 FAIL=()
 for t in nmap nuclei nikto wafw00f whatweb sslscan dnstwist ffuf dnsrecon theharvester httpx subfinder rustscan; do
     command -v "$t" >/dev/null 2>&1 || FAIL+=("$t")
 done
 if [ ${#FAIL[@]} -gt 0 ]; then
     warn "OUTILS TOUJOURS ABSENTS : ${FAIL[*]}"
-    warn "Le scanner refusera le full scan tant qu'ils ne sont pas installés (voir README — Prérequis)."
+    warn "veridy_scanner refusera le full scan tant qu'ils manquent (voir README — Prérequis)."
 else
-    ok "Tous les outils Kali requis sont présents"
+    ok "Tous les outils requis sont présents et à jour"
 fi
 
 # ----- 3. Rust toolchain -----

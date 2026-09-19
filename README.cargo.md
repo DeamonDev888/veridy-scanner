@@ -13,15 +13,14 @@ Conçu pour être exécuté aussi bien par un **opérateur humain** (TUI interac
 cargo install veridy_scanner
 ```
 
-**Prérequis — outils Kali REQUIS.** L'audit est exhaustif par défaut : les 14 outils Kali standards sont activés automatiquement et le scanner **refuse de démarrer** si l'un d'eux est absent — pas de scan léger pour le moment (un audit partiel serait trompeur).
-
-- `apt install nmap nikto sslscan dnsrecon theharvester nuclei wafw00f whatweb dnstwist ffuf`
-- `go install github.com/projectdiscovery/httpx@latest` (idem `subfinder`, `RustScan`)
-- Rust ≥ 1.75, `openssl`, `curl`, `dig`, `whois` · PostgreSQL 12+ optionnel (`--no-db`)
+**Prérequis — Kali Linux natif.** veridy_scanner est une application **Kali Linux** : les outils d'audit (nmap, nuclei, nikto, wafw00f, whatweb, sslscan, dnstwist, ffuf, dnsrecon, theHarvester) y sont pré-installés et maintenus par les dépôts Kali. Le scanner **vérifie leur présence au lancement** (exit 1 + instruction précise s'il en manque) et l'audit est exhaustif par défaut — pas de scan léger pour le moment.
 
 ```bash
-veridy_scanner tools   # diagnostic : outils requis détectés, wordlists, DB
+sudo apt update && sudo apt full-upgrade   # garder les outils natifs à jour
+veridy_scanner tools                       # diagnostic environnement
 ```
+
+Exceptions hors dépôts : `httpx`/`subfinder` (ProjectDiscovery) et `RustScan` via `go install` (⚠️ pour httpx, le bon binaire répond à `httpx -version` — le paquet Python homonyme ne fait pas l'affaire). Rust ≥ 1.75 requis.
 
 ## Guide pour Agents IA & Automatisation CLI
 

@@ -73,7 +73,8 @@ fn main() {
             eprintln!("  [✗] {:<14} → {}", name, hint);
         }
         eprintln!();
-        eprintln!("  L'audit Veridy est exhaustif par défaut : pas de scan léger pour le moment.");
+        eprintln!("  veridy_scanner est une application Kali Linux : ces outils y sont natifs.");
+        eprintln!("  L'audit est exhaustif par défaut — pas de scan léger pour le moment.");
         eprintln!("  Installez les outils ci-dessus, ou lancez `veridy_scanner tools` pour le diagnostic.");
         std::process::exit(1);
     }

@@ -17,6 +17,8 @@
 
 > **Moteur modulaire d'audit de sécurité offensif et de cartographie de surface d'attaque.**  
 > Conçu pour être exécuté aussi bien par un **opérateur humain** (TUI interactif) que par un **agent IA autonome** en ligne de commande (CLI / JSON natif).
+>
+> 🐉 **Application native Kali Linux** — les outils d'audit qu'elle orchestre sont pré-installés sur Kali ; le scanner vérifie leur présence et leur fraîcheur au lancement.
 
 ---
 
@@ -29,18 +31,18 @@ cargo install veridy_scanner
 veridy_scanner example.com --fast --json
 ```
 
-### Méthode 2 — Script d'installation automatique (Kali / Debian / Arch)
+### Méthode 2 — Script d'installation automatique (Kali Linux uniquement)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/DeamonDev888/veridy-scanner/main/install.sh -o /tmp/install.sh
 sudo bash /tmp/install.sh
 ```
 
-Le script installe : le binaire (`/usr/local/bin`), le wrapper `veridy` (TUI), les dépendances système optionnelles (nmap, nuclei, nikto…), les wordlists SecLists et le schéma PostgreSQL complet (12 tables `audit_*`).
+Le script **refuse de s'exécuter hors Kali Linux**. Sur Kali il : vérifie le système, **met à jour les outils natifs** (`apt update` + upgrade ciblé nmap/nuclei/nikto/…), installe les rares exceptions absentes des dépôts (httpx/subfinder ProjectDiscovery, RustScan — via Go), compile et déploie le binaire (`/usr/local/bin`), le wrapper `veridy` (TUI), les wordlists SecLists et le schéma PostgreSQL complet (12 tables `audit_*`).
 
 Variables surchargeables : `VERIDY_INSTALL_DIR`, `VERIDY_BRANCH`, `VERIDY_DB`.
 
-### Méthode 3 — Compilation depuis les sources
+### Méthode 3 — Compilation depuis les sources (Kali Linux)
 
 ```bash
 git clone https://github.com/DeamonDev888/veridy-scanner.git
@@ -53,26 +55,31 @@ sudo cp launch.sh /usr/local/bin/veridy
 sudo chmod +x /usr/local/bin/veridy /usr/local/bin/veridy_scanner
 ```
 
-## ⚙️ Prérequis — outils Kali REQUIS
+## ⚙️ Prérequis — Kali Linux natif
 
-L'audit Veridy est **exhaustif par défaut** : le scanner active les 14 outils Kali standards automatiquement et **refuse de démarrer** si un outil est absent — pas de scan léger silencieux pour le moment. Un environnement incomplet produirait un audit trompeur.
+**veridy_scanner est une application Kali Linux.** Elle ne roule que sur Kali : les outils d'audit qu'elle orchestre (nmap, nuclei, nikto, wafw00f, whatweb, sslscan, dnstwist, ffuf, dnsrecon, theHarvester) y sont **pré-installés et maintenus par les dépôts Kali** — rien à installer manuellement.
+
+**Vérification au lancement** : le scanner vérifie la présence des 14 outils sur le PATH et **refuse de démarrer** si l'un manque (exit 1 + instruction) — l'audit est exhaustif par défaut, pas de scan léger silencieux pour le moment. Un environnement incomplet produirait un audit trompeur.
+
+**Dépendre à jour** :
+
+```bash
+sudo apt update && sudo apt full-upgrade   # outils Kali natifs à jour
+veridy_scanner tools                       # diagnostic : présence + environnement
+```
+
+Seules exceptions (absentes ou différentes dans les dépôts) :
 
 | Outil | Installation |
 |---|---|
-| nmap, nikto, sslscan, dnsrecon, theharvester | `apt install <outil>` |
-| nuclei | `apt install nuclei` · [github.com/projectdiscovery/nuclei](https://github.com/projectdiscovery/nuclei) |
-| wafw00f | `apt install wafw00f` · `pip install wafw00f` |
-| whatweb | `apt install whatweb` · `gem install whatweb` |
-| dnstwist | `apt install dnstwist` · `pip install dnstwist` |
-| ffuf | `apt install ffuf` · [github.com/ffuf/ffuf](https://github.com/ffuf/ffuf) |
-| httpx, subfinder, rustscan | `go install github.com/projectdiscovery/httpx@latest` (idem subfinder, RustScan) |
-| obscura | Voir [Installation](#-installation) |
+| httpx (ProjectDiscovery) | `go install github.com/projectdiscovery/httpx/cmd/httpx@latest` — ⚠️ ne pas confondre avec le paquet Python homonyme (`/usr/bin/httpx` JA3) : le bon répond à `httpx -version` |
+| subfinder | `go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest` |
+| RustScan | `go install github.com/RustScan/RustScan@latest` |
+| obscura | Voir le README du projet |
 
-Également requis : Rust ≥ 1.75, `openssl`, `curl`, `dig` (dnsutils), `whois`. PostgreSQL 12+ optionnel (`--no-db` sinon).
+Également requis : Rust ≥ 1.75, `openssl`, `curl`, `dig`, `whois` (natifs sur Kali). PostgreSQL optionnel (`--no-db` sinon).
 
-Diagnostic : `veridy_scanner tools` (CLI) ou `./launch.sh --check-tools` (TUI).
-
-> `--fast` (Core Rust uniquement) reste disponible en opt-out explicite pour les environnements restreints.
+> `--fast` (Core Rust uniquement) reste disponible en opt-out explicite.
 
 ---
 

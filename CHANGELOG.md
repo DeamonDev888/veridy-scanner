@@ -10,6 +10,14 @@ Versions : [SemVer](https://semver.org/)
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
 - **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
 
+## [0.2.1] — 2026-09-19
+
+### Modifié
+- **Repositionnement Kali Linux natif** : veridy_scanner est une application Kali — les outils d'audit sont pré-installés et maintenus par les dépôts Kali ; le scanner vérifie présence et fraîcheur
+-  : refus explicite hors Kali ( avec message), mise à jour ciblée des outils natifs () au lieu d'installation massive, installation automatique des exceptions Go (httpx ProjectDiscovery — avec détection/remplacement du paquet Python homonyme, subfinder, RustScan)
+- Hints du gate binaire : « natif Kali — apt install \<outil\> » au lieu des conseils pip/gem multi-distro
+- README (GitHub + crates.io) : « Kali Linux uniquement », suppression du tableau pip/gem, ajout de  + diagnostic
+
 ## [0.2.0] — 2026-09-19 — BREAKING
 
 ### Modifié
