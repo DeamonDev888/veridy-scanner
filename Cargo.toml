@@ -1,6 +1,6 @@
 [package]
 name = "veridy_scanner"
-version = "0.1.0"
+version = "0.3.3"
 edition = "2021"
 authors = ["Veridy <contact@veridy.ca>"]
 description = "Scanner de surface modulaire pour veridy.ca (DNS, Ports, HTTP headers, TLS)"
