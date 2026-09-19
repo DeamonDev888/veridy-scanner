@@ -7,6 +7,12 @@ Versions : [SemVer](https://semver.org/)
 
 ### Publié
 - **2026-09-19 : v0.1.0 publié sur crates.io** — https://crates.io/crates/veridy_scanner
+- **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
+
+## [0.1.1] — 2026-09-19
+
+### Modifié
+- README crates.io enrichi : section « Guide pour Agents IA & Automatisation CLI » (règles non-interactif, commandes recommandées, extraction `jq`, matrice arguments/codes de retour), liste des 15 modules, badges
 
 ### Ajouté
 - 10 enrichissements findings (attestations positives + signaux offensifs) — bannières ports, DKIM trouvé, DMARC p=reject, CAA actifs, PTR hébergeur, MX, robots.txt recon, CSP unsafe-inline, expiration TLS 45j, MTA-STS TXT-sans-endpoint, sous-domaines vivants/morts + IPs
