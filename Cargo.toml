@@ -13,15 +13,10 @@ repository = "https://github.com/DeamonDev888/veridy-scanner"
 documentation = "https://docs.rs/veridy_scanner"
 keywords = [
     "security",
-    "offensive",
     "scanner",
-    "audit",
-    "kali",
+    "offensive",
     "reconnaissance",
-    "dns",
-    "tls",
-    "subdomain",
-    "penetration-testing",
+    "kali",
 ]
 categories = [
     "command-line-utilities",
