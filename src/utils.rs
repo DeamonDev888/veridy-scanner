@@ -114,7 +114,13 @@ pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
 pub fn sanitize_target(s: &str) -> String {
     let cleaned: String = s
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if cleaned.is_empty() {
         "target".to_string()
@@ -148,7 +154,9 @@ pub fn tcp_probe(host: &str, port: u16) -> bool {
     use std::net::TcpStream;
     let addr = format!("{}:{}", host, port);
     let Ok(mut stream) = TcpStream::connect_timeout(
-        &addr.parse().unwrap_or_else(|_| "127.0.0.1:1".parse().unwrap()),
+        &addr
+            .parse()
+            .unwrap_or_else(|_| "127.0.0.1:1".parse().unwrap()),
         std::time::Duration::from_millis(600),
     ) else {
         return false;

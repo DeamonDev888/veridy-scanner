@@ -3,8 +3,7 @@ use std::time::Instant;
 
 use crate::utils::extract_json_str;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct DnsreconSrv {
     pub name: String,
     pub target: String,
@@ -12,8 +11,7 @@ pub struct DnsreconSrv {
     pub address: String,
 }
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct DnsreconResult {
     pub srv_records: Vec<DnsreconSrv>,
     pub bind_versions: Vec<(String, String)>,
@@ -52,7 +50,6 @@ impl DnsreconAuditor {
         let content = fs::read_to_string(&json_path);
         let _ = fs::remove_file(&json_path);
         if let Ok(content) = content {
-
             // Parse json array of objects
             for chunk in content.split('{') {
                 if !chunk.contains('}') {
@@ -109,7 +106,8 @@ impl DnsreconAuditor {
 
         // Déduplication : dnsrecon interroge chaque NS plusieurs fois → le même
         // constat (serveur, version) ne doit apparaître qu'une seule fois.
-        let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+        let mut seen: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
         for (target, version) in &res.bind_versions {
             if !seen.insert(((**target).to_string(), (**version).to_string())) {
                 continue; // doublon déjà émis

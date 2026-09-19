@@ -2,8 +2,7 @@ use crate::modules::findings::SecurityFinding;
 use std::fs;
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExposedEndpoint {
     pub path: String,
     pub status: u16,
@@ -11,8 +10,7 @@ pub struct ExposedEndpoint {
     pub url: String,
 }
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FfufAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -28,7 +26,11 @@ impl FfufAuditor {
         let start = Instant::now();
         let target_url = format!("https://{}/FUZZ", target);
         let pid = std::process::id();
-        let tmp_output = format!("/tmp/ffuf_{}_{}.json", crate::utils::sanitize_target(target), pid);
+        let tmp_output = format!(
+            "/tmp/ffuf_{}_{}.json",
+            crate::utils::sanitize_target(target),
+            pid
+        );
         let wordlist = "/usr/share/seclists/Discovery/Web-Content/quickhits.txt";
 
         if !std::path::Path::new(wordlist).exists() {
@@ -126,7 +128,11 @@ impl FfufAuditor {
                 continue;
             }
             list.push(ExposedEndpoint {
-                url: r.get("url").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+                url: r
+                    .get("url")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 status: r.get("status").and_then(|x| x.as_u64()).unwrap_or(0) as u16,
                 length: r.get("length").and_then(|x| x.as_u64()).unwrap_or(0) as usize,
                 path,
@@ -142,12 +148,17 @@ impl FfufAuditor {
         if url.is_empty() {
             return None; // pas vérifiable
         }
-        let body = crate::utils::run_tool("curl", &["-s", "-L", "--max-time", "10", url], 15)?
-            ;
+        let body = crate::utils::run_tool("curl", &["-s", "-L", "--max-time", "10", url], 15)?;
         let body = String::from_utf8_lossy(&body.stdout).to_string();
         let p = path.to_lowercase();
         let sigs: &[&str] = if p.starts_with(".env") {
-            &["DB_PASSWORD=", "APP_KEY=", "API_KEY=", "DATABASE_URL=", "SECRET_KEY="]
+            &[
+                "DB_PASSWORD=",
+                "APP_KEY=",
+                "API_KEY=",
+                "DATABASE_URL=",
+                "SECRET_KEY=",
+            ]
         } else if p.starts_with(".git/config") || p.starts_with(".git") {
             &["[core]", "[remote \"origin\"]", "repositoryformatversion"]
         } else if p.starts_with(".git/head") {
@@ -155,7 +166,14 @@ impl FfufAuditor {
         } else if p.contains("backup") || p.ends_with(".sql") {
             &["INSERT INTO", "CREATE TABLE", "DROP TABLE", "-- MySQL dump"]
         } else if p.contains("config") {
-            &["DB_PASSWORD", "database", "password", "define('", "$cfg", "<?php"]
+            &[
+                "DB_PASSWORD",
+                "database",
+                "password",
+                "define('",
+                "$cfg",
+                "<?php",
+            ]
         } else {
             return None; // chemin non critique : pas de signature
         };
@@ -172,9 +190,18 @@ impl FfufAuditor {
             // Trier par criticité : chemins hautement sensibles en premier
             endpoints.sort_by_key(|ep| {
                 let p = ep.path.to_lowercase();
-                if p.starts_with(".git") || p.starts_with(".env") || p.contains("backup") || p.contains("config") || p.ends_with(".sql") {
+                if p.starts_with(".git")
+                    || p.starts_with(".env")
+                    || p.contains("backup")
+                    || p.contains("config")
+                    || p.ends_with(".sql")
+                {
                     0
-                } else if p.contains("admin") || p.contains("api") || p.contains("dashboard") || p.contains("login") {
+                } else if p.contains("admin")
+                    || p.contains("api")
+                    || p.contains("dashboard")
+                    || p.contains("login")
+                {
                     1
                 } else if ep.status == 200 {
                     2

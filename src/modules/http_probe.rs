@@ -59,8 +59,10 @@ impl HttpProbe {
                 "-silent",
                 "-no-color",
                 "-follow-redirects",
-                "-timeout", "10",
-                "-retries", "1",
+                "-timeout",
+                "10",
+                "-retries",
+                "1",
                 "-tech-detect",
                 "-status-code",
                 "-title",
@@ -197,10 +199,7 @@ pub fn probe_parallel(targets: Vec<String>, chunk_size: usize) -> Vec<HttpProbeR
         return Vec::new();
     }
     let chunk_size = chunk_size.max(1);
-    let chunks: Vec<Vec<String>> = targets
-        .chunks(chunk_size)
-        .map(|c| c.to_vec())
-        .collect();
+    let chunks: Vec<Vec<String>> = targets.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
     let (tx, rx) = mpsc::channel();
     let chunks = Arc::new(chunks);

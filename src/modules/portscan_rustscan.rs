@@ -35,9 +35,12 @@ impl RustScanWrapper {
         let start = Instant::now();
         let output = Command::new("rustscan")
             .args([
-                "-a", target,
-                "--ulimit", "5000",
-                "-t", &timeout_secs.to_string(),
+                "-a",
+                target,
+                "--ulimit",
+                "5000",
+                "-t",
+                &timeout_secs.to_string(),
                 "--no-banner",
             ])
             .output()
@@ -45,7 +48,11 @@ impl RustScanWrapper {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("rustscan exit code {:?} : {}", output.status.code(), stderr));
+            return Err(format!(
+                "rustscan exit code {:?} : {}",
+                output.status.code(),
+                stderr
+            ));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -127,7 +134,8 @@ mod tests {
     #[test]
     fn test_parse_ports_open_real_scan_output() {
         // Format réel complet d'un scan rustscan
-        let output = "Open 45.33.32.156:22\nOpen 45.33.32.156:80\nOpen 45.33.32.156:443\n[~] Starting Nmap";
+        let output =
+            "Open 45.33.32.156:22\nOpen 45.33.32.156:80\nOpen 45.33.32.156:443\n[~] Starting Nmap";
         let ports = RustScanWrapper::parse_ports(output);
         assert_eq!(ports, vec![22, 80, 443]);
     }

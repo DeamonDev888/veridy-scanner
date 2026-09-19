@@ -10,7 +10,17 @@ Versions : [SemVer](https://semver.org/)
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
 - **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
 
-## [0.3.3] — 2026-09-19
+## [0.3.4] — 2026-09-19
+
+### Corrigé
+- Restauration des 14 tests unitaires C2 + helper perdus lors du sync 0.3.3 (80 tests au total)
+
+### Outilage qualité (pipeline complet Rust)
+- **cargo fmt** : formatage complet du codebase (197 fichiers-diffs résolus, 0 diff résiduel)
+- **cargo clippy --all-targets -- -D warnings** : 0 erreur en mode strict (warning = build failure)
+- **cargo audit** : 0 vulnérabilité (33 dépendances, base RustSec 1251 advisories)
+- **cargo package** : manifeste validé (56 fichiers, 939 Ko compressé)
+
 
 ### Corrigé (prouvé sur scan réel metro.ca — score 0→47, 20 faux CRITICAL→0)
 - **Ffuf faux positifs** : les 403/301 (WAF/redirect) ne sont plus comptés comme découvertes ( uniquement) ; les 200 vides du catch-all sont exclus ()

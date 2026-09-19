@@ -96,7 +96,11 @@ pub fn rainbow_bar(filled: usize, width: usize) -> String {
         s.push_str(&color);
     }
     // Reste vide en gris
-    s.push_str(&format!("{}{}\x1b[0m", CLR_GRAY, "░".repeat(width - filled)));
+    s.push_str(&format!(
+        "{}{}\x1b[0m",
+        CLR_GRAY,
+        "░".repeat(width - filled)
+    ));
     s
 }
 
@@ -108,8 +112,15 @@ pub fn bar_chart(value: usize, total: usize, width: usize) -> String {
     let color = ratio_color(pct as f64 / 100.0);
     format!(
         "{}[{}{}{}] {}{}%{}({}/{})",
-        BOLD, color, "█".repeat(filled), "░".repeat(width - filled),
-        color, pct, RESET, value, total
+        BOLD,
+        color,
+        "█".repeat(filled),
+        "░".repeat(width - filled),
+        color,
+        pct,
+        RESET,
+        value,
+        total
     )
 }
 
@@ -142,7 +153,11 @@ pub fn vertical_histogram(values: &[u64], bins: usize, max_height: usize) -> Str
     for level in (1..=max_height_usize).rev() {
         let threshold = max_count * level / max_height_usize;
         let mut line = String::new();
-        line.push_str(&format!("{}{:>4}│", CLR_GRAY, level * max_count / max_height_usize));
+        line.push_str(&format!(
+            "{}{:>4}│",
+            CLR_GRAY,
+            level * max_count / max_height_usize
+        ));
         for b in &buckets {
             if (*b as usize) >= threshold {
                 line.push_str(&format!("{}{} ", CLR_BLUE, "█"));
@@ -162,7 +177,10 @@ pub fn vertical_histogram(values: &[u64], bins: usize, max_height: usize) -> Str
     lines.push(axis);
     lines.push(format!(
         "{}     {} valeurs, min={} max={}",
-        CLR_GRAY, values.len(), min, max
+        CLR_GRAY,
+        values.len(),
+        min,
+        max
     ));
 
     lines.join("\n")
@@ -195,10 +213,17 @@ pub fn gauge(_label: &str, value: f64, max: f64, width: usize) -> String {
     let color = ratio_color(pct / 100.0);
     format!(
         "{}╭{}╮\n│{}{}{} │{}{} {} / {:.0} ({:.1}%)\n╰{}╯",
-        CLR_GRAY, "─".repeat(width + 1),
-        color, "█".repeat(filled), RESET,
+        CLR_GRAY,
+        "─".repeat(width + 1),
+        color,
+        "█".repeat(filled),
+        RESET,
         "░".repeat(width - filled),
-        BOLD, value, max, pct, RESET
+        BOLD,
+        value,
+        max,
+        pct,
+        RESET
     )
 }
 
@@ -259,10 +284,18 @@ pub fn finale_banner(score: u8, target: &str) -> String {
     };
 
     let mut s = String::new();
-    s.push_str(&format!("\n{}{}{}  ══════════════════════════════════════════════════════════\n", BOLD, color, RESET));
-    s.push_str(&format!("  {} {}  SCORE : {}{}{}/100  ║  Cible : {}\n",
-                       icon, label, BOLD, score, RESET, target));
-    s.push_str(&format!("  ══════════════════════════════════════════════════════════{}\n\n", RESET));
+    s.push_str(&format!(
+        "\n{}{}{}  ══════════════════════════════════════════════════════════\n",
+        BOLD, color, RESET
+    ));
+    s.push_str(&format!(
+        "  {} {}  SCORE : {}{}{}/100  ║  Cible : {}\n",
+        icon, label, BOLD, score, RESET, target
+    ));
+    s.push_str(&format!(
+        "  ══════════════════════════════════════════════════════════{}\n\n",
+        RESET
+    ));
     s
 }
 
@@ -357,7 +390,6 @@ pub fn radar(values: &[(&str, f64); 5]) -> String {
     lines.join("\n")
 }
 
-
 /// Barre colorée pour un score 0..=100 (color gradient vert→jaune→rouge)
 pub fn score_bar(score: u8, width: usize) -> String {
     let filled = ((score as usize * width) / 100).min(width);
@@ -373,7 +405,11 @@ pub fn score_bar(score: u8, width: usize) -> String {
         };
         s.push_str(&color);
     }
-    s.push_str(&format!("{}{}\x1b[0m", CLR_GRAY, "░".repeat(width - filled)));
+    s.push_str(&format!(
+        "{}{}\x1b[0m",
+        CLR_GRAY,
+        "░".repeat(width - filled)
+    ));
     s
 }
 
@@ -389,7 +425,6 @@ pub fn fmt_findings(count: usize) -> String {
         format!("{}{}{}", CLR_RED, count, RESET)
     }
 }
-
 
 /// Centre une string dans une largeur (UTF-8 safe)
 pub fn pad_center(s: &str, width: usize) -> String {

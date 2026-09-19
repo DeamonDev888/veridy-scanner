@@ -4,8 +4,7 @@ use clap::{Parser, Subcommand};
 // TOOL FLAGS — activation des modules Kali
 // ==============================================================================
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ToolFlags {
     pub nmap: bool,
     pub nuclei: bool,
@@ -151,8 +150,7 @@ impl ToolFlags {
 // CONFIG — configuration d'exécution dérivée de la CLI
 // ==============================================================================
 
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Config {
     pub target: String,
     pub json_mode: bool,
@@ -288,7 +286,12 @@ struct Cli {
     /// Modules spécifiques, séparés par virgules
     /// (nmap, nuclei, nikto, waf, whatweb, sslscan, dnstwist, ffuf, whois,
     /// dnsrecon, theharvester, obscura, all)
-    #[arg(short = 'm', long = "modules", value_name = "LIST", value_delimiter = ',')]
+    #[arg(
+        short = 'm',
+        long = "modules",
+        value_name = "LIST",
+        value_delimiter = ','
+    )]
     modules: Vec<String>,
 
     /// Nmap : audit profond des services et scripts NSE
@@ -396,11 +399,7 @@ impl Config {
 
         // Sous-commandes
         match &cli.command {
-            Some(Commands::History {
-                limit,
-                target,
-                db,
-            }) => {
+            Some(Commands::History { limit, target, db }) => {
                 return Ok(Some(Config {
                     target: target.clone().unwrap_or_default(),
                     show_history: true,
@@ -627,7 +626,11 @@ impl Config {
         println!("ENVIRONNEMENT KALI — DIAGNOSTIC OUTILS");
         println!("─────────────────────────────────────────────────────────────");
         for (name, desc) in tools {
-            let status = if which(name).is_some() { "[✓]" } else { "[✗]" };
+            let status = if which(name).is_some() {
+                "[✓]"
+            } else {
+                "[✗]"
+            };
             println!("  {} {:<14} {}", status, name, desc);
         }
 

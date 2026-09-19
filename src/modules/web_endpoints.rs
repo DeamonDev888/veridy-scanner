@@ -1,7 +1,5 @@
-
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct WebEndpointsResult {
     pub domain: String,
     pub security_txt_present: bool,
@@ -30,11 +28,14 @@ fn run_curl_get(url: &str, timeout_s: u64) -> Option<std::process::Output> {
 /// Variante HEAD + `-X OPTIONS` pour énumérer les méthodes (en-tête Allow:).
 fn run_curl_options(url: &str, timeout_s: u64) -> Option<std::process::Output> {
     let max_time = timeout_s.to_string();
-    crate::utils::run_tool("curl", &["-s", "-I", "-X", "OPTIONS", "--max-time", &max_time, url], 8)
+    crate::utils::run_tool(
+        "curl",
+        &["-s", "-I", "-X", "OPTIONS", "--max-time", &max_time, url],
+        8,
+    )
 }
 
 pub struct WebEndpointsAuditor;
-
 
 impl WebEndpointsAuditor {
     pub fn audit(domain: &str, ip: &str) -> WebEndpointsResult {

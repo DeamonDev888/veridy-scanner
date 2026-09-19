@@ -3,8 +3,8 @@ mod modules;
 mod orchestrator;
 mod report;
 mod target_parser;
-mod utils;
 mod ui;
+mod utils;
 
 #[cfg(test)]
 mod tests;

@@ -4,8 +4,7 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct NetexecAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -41,7 +40,9 @@ impl NetexecAuditor {
         }
 
         // SMB probe null-session (signing inclus dans la sortie standard)
-        if let Some(o) = crate::utils::run_tool("nxc", &["smb", target, "--gen-json", "/dev/stdout"], 90) {
+        if let Some(o) =
+            crate::utils::run_tool("nxc", &["smb", target, "--gen-json", "/dev/stdout"], 90)
+        {
             let o = String::from_utf8_lossy(&o.stdout).to_string()
                 + &String::from_utf8_lossy(&o.stderr);
             result.raw_output = o.chars().take(2000).collect();
@@ -61,7 +62,11 @@ impl NetexecAuditor {
         result.summary = format!(
             "NetExec {} | cible {} | SMB signing: {}",
             result.version.as_deref().unwrap_or("?"),
-            if result.target_reachable { "joignable" } else { "non joignable / SMB fermé" },
+            if result.target_reachable {
+                "joignable"
+            } else {
+                "non joignable / SMB fermé"
+            },
             match result.smb_signing_enforced {
                 Some(true) => "forcé ✓",
                 Some(false) => "NON forcé ⚠",

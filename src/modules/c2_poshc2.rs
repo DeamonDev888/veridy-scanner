@@ -2,8 +2,7 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct PoshC2AuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -24,8 +23,8 @@ impl PoshC2Auditor {
 
         // PoshC2 s'installe en framework Python + wrappers /usr/bin/posh*
         let dir = "/usr/share/poshc2";
-        result.installed = std::path::Path::new(dir).exists()
-            || crate::utils::tool_on_path("posh-server");
+        result.installed =
+            std::path::Path::new(dir).exists() || crate::utils::tool_on_path("posh-server");
 
         if result.installed {
             result.framework_dir = Some(dir.to_string());
@@ -39,8 +38,16 @@ impl PoshC2Auditor {
 
         result.summary = format!(
             "PoshC2 {} | service {}",
-            if result.installed { "installé" } else { "absent" },
-            if result.service_running { "ACTIF" } else { "inactif" }
+            if result.installed {
+                "installé"
+            } else {
+                "absent"
+            },
+            if result.service_running {
+                "ACTIF"
+            } else {
+                "inactif"
+            }
         );
         result.success = result.installed;
         result.elapsed_seconds = start.elapsed().as_secs_f32();

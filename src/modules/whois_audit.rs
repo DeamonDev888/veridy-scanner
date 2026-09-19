@@ -1,7 +1,6 @@
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct WhoisResult {
     pub registrar: Option<String>,
     pub creation_date: Option<String>,

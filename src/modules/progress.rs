@@ -51,9 +51,14 @@ impl ProgressTracker {
 
     pub fn set_running(&self, index: usize, detail: &str) {
         if index < self.tasks.len() {
-            self.tasks[index].status.store(STATUS_RUNNING, Ordering::SeqCst);
+            self.tasks[index]
+                .status
+                .store(STATUS_RUNNING, Ordering::SeqCst);
             {
-                let mut d = self.tasks[index].detail.lock().unwrap_or_else(|e| e.into_inner());
+                let mut d = self.tasks[index]
+                    .detail
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 *d = detail.to_string();
             }
             if let Ok(mut a) = self.active_msg.lock() {
@@ -64,7 +69,9 @@ impl ProgressTracker {
 
     pub fn set_done(&self, index: usize, duration: Duration) {
         if index < self.tasks.len() {
-            self.tasks[index].status.store(STATUS_DONE, Ordering::SeqCst);
+            self.tasks[index]
+                .status
+                .store(STATUS_DONE, Ordering::SeqCst);
             self.tasks[index]
                 .duration_ms
                 .store(duration.as_millis() as u64, Ordering::SeqCst);
@@ -73,7 +80,9 @@ impl ProgressTracker {
 
     pub fn set_failed(&self, index: usize, duration: Duration) {
         if index < self.tasks.len() {
-            self.tasks[index].status.store(STATUS_FAILED, Ordering::SeqCst);
+            self.tasks[index]
+                .status
+                .store(STATUS_FAILED, Ordering::SeqCst);
             self.tasks[index]
                 .duration_ms
                 .store(duration.as_millis() as u64, Ordering::SeqCst);
@@ -83,7 +92,10 @@ impl ProgressTracker {
     pub fn set_detail(&self, index: usize, detail: &str) {
         if index < self.tasks.len() {
             {
-                let mut d = self.tasks[index].detail.lock().unwrap_or_else(|e| e.into_inner());
+                let mut d = self.tasks[index]
+                    .detail
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
                 *d = detail.to_string();
             }
             if let Ok(mut a) = self.active_msg.lock() {

@@ -21,7 +21,7 @@ use std::thread;
 pub struct SqliFinding {
     pub url: String,
     pub parameter: String,
-    pub method: String, // "GET" | "POST"
+    pub method: String,              // "GET" | "POST"
     pub injection_type: Vec<String>, // ["boolean-based blind", "time-based blind", ...]
     pub payload: Option<String>,
     pub dbms: Option<String>,
@@ -39,19 +39,22 @@ impl SqliAuditor {
     pub fn scan_url(url: &str, timeout_secs: u64) -> Result<Vec<SqliFinding>, String> {
         let output = Command::new("sqlmap")
             .args([
-                "-u", url,
-                "--batch",                          // mode non-interactif
-                "--random-agent",                   // user-agent aléatoire
-                "--level=2",                        // 1-5 (5 = très agressif)
-                "--risk=2",                         // 1-3 (3 = très agressif)
-                "--threads=1",                      // 1 thread (sqlmap gère lui-même)
-                "--timeout", &timeout_secs.to_string(),
+                "-u",
+                url,
+                "--batch",        // mode non-interactif
+                "--random-agent", // user-agent aléatoire
+                "--level=2",      // 1-5 (5 = très agressif)
+                "--risk=2",       // 1-3 (3 = très agressif)
+                "--threads=1",    // 1 thread (sqlmap gère lui-même)
+                "--timeout",
+                &timeout_secs.to_string(),
                 "--retries=1",
-                "--no-cast",                        // évite les conversions de type
-                "--technique=BEUSTQ",               // B=bool, E=error, U=union, S=stacked, T=time, Q=inlines
-                "--flush-session",                  // pas de cache entre URLs
-                "--silent",                         // réduit le bruit
-                "-v", "0",                          // pas de verbose
+                "--no-cast",          // évite les conversions de type
+                "--technique=BEUSTQ", // B=bool, E=error, U=union, S=stacked, T=time, Q=inlines
+                "--flush-session",    // pas de cache entre URLs
+                "--silent",           // réduit le bruit
+                "-v",
+                "0", // pas de verbose
             ])
             .output()
             .map_err(|e| format!("sqlmap non lançable : {}", e))?;
@@ -142,15 +145,13 @@ pub fn scan_urls_parallel(urls: Vec<String>, timeout_secs: u64) -> Vec<SqliFindi
     for url in urls.iter() {
         let tx_clone = tx.clone();
         let url = url.clone();
-        let handle = thread::spawn(move || {
-            match SqliAuditor::scan_url(&url, timeout_secs) {
-                Ok(findings) => {
-                    for f in findings {
-                        let _ = tx_clone.send(Some(f));
-                    }
+        let handle = thread::spawn(move || match SqliAuditor::scan_url(&url, timeout_secs) {
+            Ok(findings) => {
+                for f in findings {
+                    let _ = tx_clone.send(Some(f));
                 }
-                Err(e) => eprintln!("[WARN] sqlmap sur {} : {}", url, e),
             }
+            Err(e) => eprintln!("[WARN] sqlmap sur {} : {}", url, e),
         });
         handles.push(handle);
     }
@@ -234,7 +235,8 @@ back-end DBMS: MySQL 5.7
 
     #[test]
     fn test_parse_clean_output() {
-        let findings = SqliAuditor::parse_output(SQLMAP_OUTPUT_CLEAN, "http://test.com/page?foo=bar");
+        let findings =
+            SqliAuditor::parse_output(SQLMAP_OUTPUT_CLEAN, "http://test.com/page?foo=bar");
         assert!(findings.is_empty(), "Pas de finding sur clean output");
     }
 

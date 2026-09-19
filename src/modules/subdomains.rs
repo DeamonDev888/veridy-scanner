@@ -16,13 +16,62 @@ use std::sync::{mpsc, Arc};
 use std::thread;
 
 pub const EXPANDED_SUBDOMAINS: &[&str] = &[
-    "www", "mail", "api", "app", "blog", "admin", "portal", "dev", "staging",
-    "status", "vpn", "auth", "registre", "smtp", "imap", "docs", "support",
-    "dashboard", "git", "gitlab", "grafana", "keycloak", "idp", "whm", "cpanel",
-    "mta-sts", "autodiscover", "autoconfig", "webmail", "ns1", "ns2", "corp",
-    "cdn", "media", "billing", "test", "demo", "qa", "prod", "preprod",
-    "edge", "lb", "proxy", "gateway", "firewall", "vpn1", "vpn2", "remote",
-    "cloud", "console", "panel", "web", "shop", "store", "pay", "payment",
+    "www",
+    "mail",
+    "api",
+    "app",
+    "blog",
+    "admin",
+    "portal",
+    "dev",
+    "staging",
+    "status",
+    "vpn",
+    "auth",
+    "registre",
+    "smtp",
+    "imap",
+    "docs",
+    "support",
+    "dashboard",
+    "git",
+    "gitlab",
+    "grafana",
+    "keycloak",
+    "idp",
+    "whm",
+    "cpanel",
+    "mta-sts",
+    "autodiscover",
+    "autoconfig",
+    "webmail",
+    "ns1",
+    "ns2",
+    "corp",
+    "cdn",
+    "media",
+    "billing",
+    "test",
+    "demo",
+    "qa",
+    "prod",
+    "preprod",
+    "edge",
+    "lb",
+    "proxy",
+    "gateway",
+    "firewall",
+    "vpn1",
+    "vpn2",
+    "remote",
+    "cloud",
+    "console",
+    "panel",
+    "web",
+    "shop",
+    "store",
+    "pay",
+    "payment",
 ];
 
 #[derive(Debug, Clone, Serialize)]
@@ -131,10 +180,7 @@ impl SubdomainScanner {
     }
 
     /// Résolution DNS + probe HTTP parallèle (thread pool simple)
-    fn resolve_and_probe_parallel(
-        candidates: Vec<String>,
-        source: &str,
-    ) -> Vec<SubdomainResult> {
+    fn resolve_and_probe_parallel(candidates: Vec<String>, source: &str) -> Vec<SubdomainResult> {
         let (tx, rx) = mpsc::channel();
         let candidates = Arc::new(candidates);
 
@@ -160,7 +206,17 @@ impl SubdomainScanner {
                         // Probe HTTP HEAD rapide (timeout 3s)
                         let url = format!("https://{}/", sub);
                         if let Ok(out) = Command::new("curl")
-                            .args(["-s", "-I", "--max-time", "3", "-o", "/dev/null", "-w", "%{http_code}", &url])
+                            .args([
+                                "-s",
+                                "-I",
+                                "--max-time",
+                                "3",
+                                "-o",
+                                "/dev/null",
+                                "-w",
+                                "%{http_code}",
+                                &url,
+                            ])
                             .output()
                         {
                             if let Ok(s) = String::from_utf8_lossy(&out.stdout).parse::<u16>() {
@@ -172,7 +228,17 @@ impl SubdomainScanner {
                         if !alive {
                             let url_http = format!("http://{}/", sub);
                             if let Ok(out) = Command::new("curl")
-                                .args(["-s", "-I", "--max-time", "3", "-o", "/dev/null", "-w", "%{http_code}", &url_http])
+                                .args([
+                                    "-s",
+                                    "-I",
+                                    "--max-time",
+                                    "3",
+                                    "-o",
+                                    "/dev/null",
+                                    "-w",
+                                    "%{http_code}",
+                                    &url_http,
+                                ])
                                 .output()
                             {
                                 if let Ok(s) = String::from_utf8_lossy(&out.stdout).parse::<u16>() {
@@ -263,7 +329,10 @@ mod tests {
         // On utilise un domaine invalide (.invalid TLD réservé RFC 6761)
         let results = SubdomainScanner::scan_with_mode("example.invalid", ScanMode::StaticOnly);
         // Pas de résolution possible, donc tous is_alive=false mais la liste est testée
-        assert!(!results.is_empty(), "doit au moins tester les sous-domaines");
+        assert!(
+            !results.is_empty(),
+            "doit au moins tester les sous-domaines"
+        );
         for r in &results {
             assert_eq!(r.source, "static");
             assert!(r.subdomain.ends_with(".example.invalid"));
@@ -292,7 +361,11 @@ mod tests {
         let elapsed = start.elapsed();
         // StaticOnly doit être < 30s même sans résolution (timeout HTTP 3s × 50+ domaines = ~150s en théorie)
         // Mais ici on test juste qu'il ne hang pas sur subfinder
-        assert!(elapsed.as_secs() < 180, "StaticOnly trop lent: {:?}", elapsed);
+        assert!(
+            elapsed.as_secs() < 180,
+            "StaticOnly trop lent: {:?}",
+            elapsed
+        );
     }
 
     #[test]

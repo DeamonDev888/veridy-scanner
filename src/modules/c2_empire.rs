@@ -2,8 +2,7 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct EmpireAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -31,12 +30,8 @@ impl EmpireAuditor {
         }
 
         // DB prête ? (mariadb/mysql + base empire créée par `powershell-empire setup`)
-        result.database_ready = crate::utils::run_tool(
-            "mysql",
-            &["-u", "root", "-e", "USE empire;"],
-            10,
-        )
-        .is_some();
+        result.database_ready =
+            crate::utils::run_tool("mysql", &["-u", "root", "-e", "USE empire;"], 10).is_some();
 
         // Serveur REST actif ? (port 1337 par défaut)
         result.server_running = crate::utils::tcp_probe("127.0.0.1", 1337);
@@ -49,8 +44,16 @@ impl EmpireAuditor {
 
         result.summary = format!(
             "Empire installé | DB {} | serveur {}",
-            if result.database_ready { "prête" } else { "non initialisée (setup requis)" },
-            if result.server_running { "ACTIF (:1337)" } else { "inactif" }
+            if result.database_ready {
+                "prête"
+            } else {
+                "non initialisée (setup requis)"
+            },
+            if result.server_running {
+                "ACTIF (:1337)"
+            } else {
+                "inactif"
+            }
         );
         result.success = result.installed;
         result.elapsed_seconds = start.elapsed().as_secs_f32();

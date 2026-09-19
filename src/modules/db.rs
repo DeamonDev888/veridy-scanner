@@ -3,8 +3,7 @@ use crate::report::FullAuditReport;
 pub struct DatabaseManager;
 
 #[allow(dead_code)]
-#[derive(Debug, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ScanHistoryEntry {
     pub id: i64,
     pub target: String,
@@ -45,7 +44,16 @@ impl DatabaseManager {
         // 2. Exécution pour récupérer l'ID généré
         let output = crate::utils::run_tool_stdin(
             "psql",
-            &["-d", db_name, "-v", "ON_ERROR_STOP=1", "-t", "-A", "-f", "-"],
+            &[
+                "-d",
+                db_name,
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-t",
+                "-A",
+                "-f",
+                "-",
+            ],
             30,
             &script,
             &[
@@ -413,7 +421,11 @@ impl DatabaseManager {
                     "{} hôte(s) vivants sur {} probed — technos: {}",
                     live,
                     hp.len(),
-                    if tech_list.is_empty() { "-".to_string() } else { tech_list.join(", ") }
+                    if tech_list.is_empty() {
+                        "-".to_string()
+                    } else {
+                        tech_list.join(", ")
+                    }
                 )
             };
             let raw = serde_json::to_string_pretty(hp).unwrap_or_default();
@@ -518,7 +530,10 @@ impl DatabaseManager {
         for t in tables {
             sql.push_str(&format!("DELETE FROM {} WHERE scan_id = {};\n", t, scan_id));
         }
-        sql.push_str(&format!("DELETE FROM audit_scans WHERE id = {};\n", scan_id));
+        sql.push_str(&format!(
+            "DELETE FROM audit_scans WHERE id = {};\n",
+            scan_id
+        ));
         sql.push_str("COMMIT;\n");
         let _ = crate::utils::run_tool_stdin(
             "psql",

@@ -2,8 +2,7 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MerlinAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -23,8 +22,8 @@ impl MerlinAuditor {
         let mut result = MerlinAuditResult::default();
 
         // Binaire : merlinserver (/usr/sbin)
-        result.installed = crate::utils::tool_on_path("merlinserver")
-            || crate::utils::tool_on_path("merlinAgent");
+        result.installed =
+            crate::utils::tool_on_path("merlinserver") || crate::utils::tool_on_path("merlinAgent");
 
         if result.installed {
             if let Some(o) = crate::utils::run_tool("merlinserver", &["-h"], 20) {
@@ -40,7 +39,11 @@ impl MerlinAuditor {
         result.summary = format!(
             "Merlin {} | serveur {}",
             result.version.as_deref().unwrap_or("?"),
-            if result.server_running { "ACTIF (gRPC :50051)" } else { "inactif" }
+            if result.server_running {
+                "ACTIF (gRPC :50051)"
+            } else {
+                "inactif"
+            }
         );
         result.success = result.installed;
         result.elapsed_seconds = start.elapsed().as_secs_f32();

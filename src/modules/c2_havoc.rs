@@ -2,8 +2,7 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct HavocAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -49,7 +48,11 @@ impl HavocAuditor {
         result.summary = format!(
             "Havoc {} | teamserver {}",
             result.version.as_deref().unwrap_or("?"),
-            if result.teamserver_running { "ACTIF (:40056)" } else { "inactif" }
+            if result.teamserver_running {
+                "ACTIF (:40056)"
+            } else {
+                "inactif"
+            }
         );
         result.success = result.installed;
         result.elapsed_seconds = start.elapsed().as_secs_f32();

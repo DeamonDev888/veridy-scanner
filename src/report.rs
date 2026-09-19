@@ -1,5 +1,4 @@
 use crate::modules::brand_sec::BrandSecResult;
-use serde::Serialize;
 use crate::modules::dns::DnsAuditResult;
 use crate::modules::dns_hardening::DnsHardeningResult;
 use crate::modules::dnsrecon_audit::DnsreconResult;
@@ -8,23 +7,24 @@ use crate::modules::ffuf_audit::FfufAuditResult;
 use crate::modules::findings::SecurityFinding;
 use crate::modules::geo::GeoComplianceResult;
 use crate::modules::http::HttpAuditResult;
+use crate::modules::http_probe::HttpProbeResult;
 use crate::modules::nikto_deep::NiktoAuditResult;
 use crate::modules::nmap_deep::NmapAuditResult;
 use crate::modules::nuclei_deep::NucleiAuditResult;
 use crate::modules::obscura_audit::ObscuraResult;
 use crate::modules::ports::PortScanResult;
+use crate::modules::portscan_rustscan::RustScanResult;
+use crate::modules::sqli_audit::SqliFinding;
 use crate::modules::sslscan_audit::SslscanResult;
 use crate::modules::subdomains::SubdomainResult;
 use crate::modules::tech_stack::TechStackResult;
 use crate::modules::theharvester_audit::TheHarvesterResult;
-use crate::modules::http_probe::HttpProbeResult;
-use crate::modules::portscan_rustscan::RustScanResult;
-use crate::modules::sqli_audit::SqliFinding;
 use crate::modules::tls::TlsAuditResult;
 use crate::modules::vuln_audit::VulnAuditResult;
 use crate::modules::waf::WafResult;
 use crate::modules::web_endpoints::WebEndpointsResult;
 use crate::modules::whois_audit::WhoisResult;
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct FullAuditReport {
@@ -170,9 +170,7 @@ impl FullAuditReport {
         println!(
             "================================================================================"
         );
-        println!(
-            "        VERIDY CYBERSCAN 360° — AUDIT DE SURFACE APPROFONDI "
-        );
+        println!("        VERIDY CYBERSCAN 360° — AUDIT DE SURFACE APPROFONDI ");
         println!(
             "================================================================================"
         );
@@ -919,7 +917,10 @@ impl FullAuditReport {
             println!("[21] DÉCOUVERTE D'ENDPOINTS & PROBING HTTP (HTTPX)");
             println!("    • Endpoints audités    : {} URLs", probes.len());
             for p in probes.iter().take(10) {
-                let code_str = p.status_code.map(|c| c.to_string()).unwrap_or_else(|| "ERR".to_string());
+                let code_str = p
+                    .status_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "ERR".to_string());
                 let title = p.title.as_deref().unwrap_or("Sans titre");
                 println!("    • [{:>3}] {:<35} │ {}", code_str, p.url, title);
                 if !p.technologies.is_empty() {
@@ -927,7 +928,10 @@ impl FullAuditReport {
                 }
             }
             if probes.len() > 10 {
-                println!("    • ... et {} autres endpoints inspectés.", probes.len() - 10);
+                println!(
+                    "    • ... et {} autres endpoints inspectés.",
+                    probes.len() - 10
+                );
             }
             println!();
         }
@@ -936,12 +940,20 @@ impl FullAuditReport {
         if let Some(ref sqli_res) = self.sqli {
             println!("[22] AUDIT DE VULNÉRABILITÉS INJECTIONS SQL (SQLMAP)");
             if sqli_res.is_empty() {
-                println!("    • Failles SQLi         : Aucune injection SQL exploitable identifiée.");
+                println!(
+                    "    • Failles SQLi         : Aucune injection SQL exploitable identifiée."
+                );
             } else {
                 for s in sqli_res {
                     let dbms = s.dbms.as_deref().unwrap_or("Inconnu");
-                    println!("    • [VULNÉRABLE] Paramètre '{}' sur {}", s.parameter, s.url);
-                    println!("      - Type d'injection   : {}", s.injection_type.join(", "));
+                    println!(
+                        "    • [VULNÉRABLE] Paramètre '{}' sur {}",
+                        s.parameter, s.url
+                    );
+                    println!(
+                        "      - Type d'injection   : {}",
+                        s.injection_type.join(", ")
+                    );
                     println!("      - SGBD identifié     : {}", dbms);
                     if let Some(ref pay) = s.payload {
                         println!("      - Payload validé     : {}", pay);
@@ -976,8 +988,14 @@ impl FullAuditReport {
         println!(
             "--------------------------------------------------------------------------------\n"
         );
-        println!("{}", crate::ui::finale_banner(self.overall_score, &self.target));
-        println!("  Hygiène globale : [{}]", crate::ui::score_bar(self.overall_score, 40));
+        println!(
+            "{}",
+            crate::ui::finale_banner(self.overall_score, &self.target)
+        );
+        println!(
+            "  Hygiène globale : [{}]",
+            crate::ui::score_bar(self.overall_score, 40)
+        );
         println!();
     }
 
@@ -1014,9 +1032,51 @@ impl FullAuditReport {
         }
     }
 
+    #[cfg(test)]
+    pub fn default_for_tests() -> Self {
+        Self {
+            target: "test.local".into(),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+            duration_seconds: 0.0,
+            dns: Default::default(),
+            ports: Default::default(),
+            http: Default::default(),
+            tls: Default::default(),
+            subdomains: Default::default(),
+            geo: Default::default(),
+            email_sec: Default::default(),
+            web_endpoints: Default::default(),
+            dns_hardening: Default::default(),
+            vuln_audit: Default::default(),
+            nmap: None,
+            nuclei: None,
+            nikto: None,
+            waf: None,
+            tech_stack: None,
+            sslscan: None,
+            brand_sec: None,
+            ffuf: None,
+            whois: None,
+            dnsrecon: None,
+            theharvester: None,
+            obscura: None,
+            http_probe: None,
+            rustscan: None,
+            sqli: None,
+            sliver: None,
+            havoc: None,
+            merlin: None,
+            poshc2: None,
+            empire: None,
+            chisel: None,
+            netexec: None,
+            findings: vec![],
+            overall_score: 100,
+        }
+    }
+
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!(r#"{{"error": "serialization failed: {}"}}"#, e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!(r#"{{"error": "serialization failed: {}"}}"#, e))
     }
 }

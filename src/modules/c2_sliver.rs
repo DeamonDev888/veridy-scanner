@@ -5,8 +5,7 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct SliverAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -30,8 +29,8 @@ impl SliverAuditor {
         let mut result = SliverAuditResult::default();
 
         // 1. Présence des binaires
-        result.installed =
-            crate::utils::tool_on_path("sliver-server") || crate::utils::tool_on_path("sliver-client");
+        result.installed = crate::utils::tool_on_path("sliver-server")
+            || crate::utils::tool_on_path("sliver-client");
         if !result.installed {
             result.summary = "Sliver absent du PATH (apt install sliver)".to_string();
             result.success = false;
@@ -54,11 +53,7 @@ impl SliverAuditor {
             if let Ok(entries) = std::fs::read_dir(data_dir) {
                 result.implants = entries
                     .filter_map(|e| e.ok())
-                    .filter(|e| {
-                        e.path()
-                            .extension()
-                            .is_some_and(|x| x == "cfg")
-                    })
+                    .filter(|e| e.path().extension().is_some_and(|x| x == "cfg"))
                     .filter_map(|e| e.file_name().to_str().map(|s| s.to_string()))
                     .collect();
             }
@@ -67,13 +62,20 @@ impl SliverAuditor {
         result.summary = format!(
             "Sliver {} | serveur {} | {} implant(s) cfg",
             result.version.as_deref().unwrap_or("?"),
-            if result.server_running { "ACTIF (gRPC :31337)" } else { "inactif" },
+            if result.server_running {
+                "ACTIF (gRPC :31337)"
+            } else {
+                "inactif"
+            },
             result.implants.len()
         );
         result.success = true;
         result.raw_output = format!(
             "installed={}\nversion={:?}\nserver_running={}\nimplants={}",
-            result.installed, result.version, result.server_running, result.implants.len()
+            result.installed,
+            result.version,
+            result.server_running,
+            result.implants.len()
         );
         result.elapsed_seconds = start.elapsed().as_secs_f32();
         result

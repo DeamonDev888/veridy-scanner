@@ -4,8 +4,7 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ChiselAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -61,7 +60,11 @@ impl ChiselAuditor {
         result.summary = format!(
             "Chisel {} | serveur local {}",
             result.version.as_deref().unwrap_or("?"),
-            if result.server_demo_ok { "démontrable (bind OK)" } else { "non démontré" }
+            if result.server_demo_ok {
+                "démontrable (bind OK)"
+            } else {
+                "non démontré"
+            }
         );
         result.success = result.installed;
         result.elapsed_seconds = start.elapsed().as_secs_f32();

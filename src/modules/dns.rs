@@ -1,8 +1,7 @@
 use std::net::{IpAddr, ToSocketAddrs};
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DnsRecordEntry {
     pub record_type: String,
     pub value: String,
@@ -10,8 +9,7 @@ pub struct DnsRecordEntry {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct DnsAuditResult {
     pub domain: String,
     pub a_records: Vec<String>,
@@ -100,11 +98,9 @@ impl DnsAuditor {
 
         // 3. Reverse PTR sur la première IP
         if let Some(first_ip) = result.a_records.first() {
-            if let Some(out) = crate::utils::run_tool(
-                "dig",
-                &["+short", "-x", first_ip, "+time=2", "+tries=1"],
-                8,
-            ) {
+            if let Some(out) =
+                crate::utils::run_tool("dig", &["+short", "-x", first_ip, "+time=2", "+tries=1"], 8)
+            {
                 let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
                 if !s.is_empty() {
                     result.reverse_ptr = Some(s.clone());
@@ -173,11 +169,9 @@ impl DnsAuditor {
 
     fn enrich_via_dig(domain: &str, result: &mut DnsAuditResult) {
         // MX
-        if let Some(output) = crate::utils::run_tool(
-            "dig",
-            &["+short", "+time=2", "+tries=1", "MX", domain],
-            8,
-        ) {
+        if let Some(output) =
+            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "MX", domain], 8)
+        {
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
@@ -192,11 +186,9 @@ impl DnsAuditor {
         }
 
         // NS
-        if let Some(output) = crate::utils::run_tool(
-            "dig",
-            &["+short", "+time=2", "+tries=1", "NS", domain],
-            8,
-        ) {
+        if let Some(output) =
+            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "NS", domain], 8)
+        {
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
@@ -211,11 +203,9 @@ impl DnsAuditor {
         }
 
         // TXT
-        if let Some(output) = crate::utils::run_tool(
-            "dig",
-            &["+short", "+time=2", "+tries=1", "TXT", domain],
-            8,
-        ) {
+        if let Some(output) =
+            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "TXT", domain], 8)
+        {
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 let trimmed = line.trim().trim_matches('"');
                 if !trimmed.is_empty() {
@@ -230,11 +220,9 @@ impl DnsAuditor {
         }
 
         // SOA
-        if let Some(output) = crate::utils::run_tool(
-            "dig",
-            &["+short", "+time=2", "+tries=1", "SOA", domain],
-            8,
-        ) {
+        if let Some(output) =
+            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "SOA", domain], 8)
+        {
             let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !s.is_empty() {
                 result.soa_record = Some(s.clone());
@@ -247,11 +235,9 @@ impl DnsAuditor {
         }
 
         // CAA
-        if let Some(output) = crate::utils::run_tool(
-            "dig",
-            &["+short", "+time=2", "+tries=1", "CAA", domain],
-            8,
-        ) {
+        if let Some(output) =
+            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "CAA", domain], 8)
+        {
             for line in String::from_utf8_lossy(&output.stdout).lines() {
                 let trimmed = line.trim();
                 if !trimmed.is_empty() {
@@ -275,8 +261,7 @@ impl DnsAuditor {
         ) {
             let s = String::from_utf8_lossy(&out.stdout);
             let ad_flag = s.lines().any(|l| {
-                l.trim_start().starts_with(";; flags:")
-                    && l.split_whitespace().any(|t| t == "ad")
+                l.trim_start().starts_with(";; flags:") && l.split_whitespace().any(|t| t == "ad")
             });
             if ad_flag {
                 result.dnssec_active = true;

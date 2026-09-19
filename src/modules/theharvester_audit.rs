@@ -1,8 +1,7 @@
 use std::fs;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct TheHarvesterResult {
     pub hosts: Vec<String>,
     pub emails: Vec<String>,
@@ -45,7 +44,6 @@ impl TheHarvesterAuditor {
         let _ = fs::remove_file(&json_path);
         let _ = fs::remove_file(&xml_path);
         if let Ok(content) = content {
-
             // Extract hosts array
             if let Some(pos) = content.find("\"hosts\":[") {
                 let rest = &content[pos + 9..];

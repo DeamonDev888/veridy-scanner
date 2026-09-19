@@ -10,8 +10,7 @@ use crate::modules::vuln_audit::VulnAuditResult;
 use crate::modules::web_endpoints::WebEndpointsResult;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SecurityFinding {
     pub severity: &'static str, // CRITICAL, HIGH, MEDIUM, LOW, INFO
     pub category: &'static str, // DNS, PORT, HTTP, TLS, COOKIE, SUBDOMAIN, EMAIL, WEB, CVE, SRI, CORS, GEO, OSINT, NMAP, NUCLEI, NIKTO, WAF, BRAND, SECRETS, MIXED_CONTENT, WHOIS, SUPPLY_CHAIN, FRONTEND, OBSCURA
@@ -220,7 +219,12 @@ impl FindingsEngine {
         }
 
         if !is_bare_ip && !email_sec.dkim_selectors_found.is_empty() {
-            let sels: Vec<String> = email_sec.dkim_selectors_found.iter().take(3).cloned().collect();
+            let sels: Vec<String> = email_sec
+                .dkim_selectors_found
+                .iter()
+                .take(3)
+                .cloned()
+                .collect();
             findings.push(SecurityFinding {
                 severity: "INFO",
                 category: "EMAIL",
@@ -231,10 +235,7 @@ impl FindingsEngine {
             });
         }
 
-        if !is_bare_ip
-            && email_sec.mta_sts_present
-            && email_sec.mta_sts_mode.is_none()
-        {
+        if !is_bare_ip && email_sec.mta_sts_present && email_sec.mta_sts_mode.is_none() {
             findings.push(SecurityFinding {
                 severity: "MEDIUM",
                 category: "EMAIL",
@@ -338,8 +339,8 @@ impl FindingsEngine {
                     severity: "LOW",
                     category: "HTTP",
                     title: format!("Divulgation du serveur Web : '{}'", s),
-                    recommendation: "Masquer la signature 'Server' (ex: server_tokens off dans Nginx)."
-                        .into(),
+                    recommendation:
+                        "Masquer la signature 'Server' (ex: server_tokens off dans Nginx).".into(),
                 });
             }
         }
@@ -347,57 +348,57 @@ impl FindingsEngine {
         // HSTS : évaluation du max-age réel (trop court = protection dégradée)
         if http_service_present {
             if let Some(ref v) = http.hsts_value {
-            let max_age = v
-                .split(';')
-                .find_map(|p| p.trim().strip_prefix("max-age="))
-                .and_then(|s| s.trim().parse::<u64>().ok());
-            if let Some(age) = max_age {
-                if age < 15_768_000 {
-                    findings.push(SecurityFinding {
-                        severity: "MEDIUM",
-                        category: "HTTP",
-                        title: format!(
-                            "HSTS max-age trop court ({} s < 6 mois recommandés)",
-                            age
-                        ),
-                        recommendation:
-                            "Porter max-age à au moins 31536000 (1 an) avec includeSubDomains."
-                                .into(),
-                    });
+                let max_age = v
+                    .split(';')
+                    .find_map(|p| p.trim().strip_prefix("max-age="))
+                    .and_then(|s| s.trim().parse::<u64>().ok());
+                if let Some(age) = max_age {
+                    if age < 15_768_000 {
+                        findings.push(SecurityFinding {
+                            severity: "MEDIUM",
+                            category: "HTTP",
+                            title: format!(
+                                "HSTS max-age trop court ({} s < 6 mois recommandés)",
+                                age
+                            ),
+                            recommendation:
+                                "Porter max-age à au moins 31536000 (1 an) avec includeSubDomains."
+                                    .into(),
+                        });
+                    }
                 }
             }
-        }
         }
 
         // Cookies : chaque cookie sans Secure/HttpOnly est signalé (l'ancien
         // moteur listait les cookies mais ne générait AUCUN finding)
         if http_service_present {
-        for c in &http.cookies {
-            if !c.secure || !c.http_only || c.same_site.is_none() {
-                let mut missing = Vec::new();
-                if !c.secure {
-                    missing.push("Secure");
+            for c in &http.cookies {
+                if !c.secure || !c.http_only || c.same_site.is_none() {
+                    let mut missing = Vec::new();
+                    if !c.secure {
+                        missing.push("Secure");
+                    }
+                    if !c.http_only {
+                        missing.push("HttpOnly");
+                    }
+                    if c.same_site.is_none() {
+                        missing.push("SameSite");
+                    }
+                    findings.push(SecurityFinding {
+                        severity: "MEDIUM",
+                        category: "COOKIE",
+                        title: format!(
+                            "Cookie '{}' émis sans attribut(s) de sécurité : {}",
+                            c.name,
+                            missing.join(", ")
+                        ),
+                        recommendation:
+                            "Ajouter Secure, HttpOnly et SameSite=Lax/Strict sur tous les cookies."
+                                .into(),
+                    });
                 }
-                if !c.http_only {
-                    missing.push("HttpOnly");
-                }
-                if c.same_site.is_none() {
-                    missing.push("SameSite");
-                }
-                findings.push(SecurityFinding {
-                    severity: "MEDIUM",
-                    category: "COOKIE",
-                    title: format!(
-                        "Cookie '{}' émis sans attribut(s) de sécurité : {}",
-                        c.name,
-                        missing.join(", ")
-                    ),
-                    recommendation:
-                        "Ajouter Secure, HttpOnly et SameSite=Lax/Strict sur tous les cookies."
-                            .into(),
-                });
             }
-        }
         }
 
         // 6. Audit Web Endpoints
@@ -541,7 +542,9 @@ impl FindingsEngine {
             .parse::<std::net::IpAddr>()
             .ok()
             .map(|ip| match ip {
-                std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_loopback() || v4.is_link_local(),
+                std::net::IpAddr::V4(v4) => {
+                    v4.is_private() || v4.is_loopback() || v4.is_link_local()
+                }
                 std::net::IpAddr::V6(v6) => v6.is_loopback() || v6.is_unicast_link_local(),
             })
             .unwrap_or(false);
@@ -570,8 +573,14 @@ impl FindingsEngine {
             findings.push(SecurityFinding {
                 severity: "INFO",
                 category: "GEO",
-                title: format!("Hébergement détecté au {} ({}, {})", region_info, geo.org_name.as_deref().unwrap_or(""), geo.city.as_deref().unwrap_or("")),
-                recommendation: "Information géographique issue du whois — aucune action requise.".into(),
+                title: format!(
+                    "Hébergement détecté au {} ({}, {})",
+                    region_info,
+                    geo.org_name.as_deref().unwrap_or(""),
+                    geo.city.as_deref().unwrap_or("")
+                ),
+                recommendation: "Information géographique issue du whois — aucune action requise."
+                    .into(),
             });
         } else {
             findings.push(SecurityFinding {

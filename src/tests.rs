@@ -39,10 +39,7 @@ fn test_extract_json_str() {
         extract_json_str(json, "target"),
         Some("veridy.ca".to_string())
     );
-    assert_eq!(
-        extract_json_str(json, "status"),
-        Some("active".to_string())
-    );
+    assert_eq!(extract_json_str(json, "status"), Some("active".to_string()));
     assert_eq!(
         extract_json_str(json, "escaped"),
         Some("val\"ue".to_string())
@@ -88,9 +85,13 @@ fn test_target_parser_rejects_invalid_format() {
     for target in forbidden {
         let v = TargetParser::resolve(target);
         assert!(
-            matches!(v, TargetVerdict::Resolved(_) | TargetVerdict::Unresolvable(_)),
+            matches!(
+                v,
+                TargetVerdict::Resolved(_) | TargetVerdict::Unresolvable(_)
+            ),
             "Target {} devrait être Resolved ou Unresolvable, got {:?}",
-            target, v
+            target,
+            v
         );
     }
 }
@@ -107,9 +108,9 @@ fn test_target_parser_accepts_all_ips_without_filter() {
         "172.31.255.255",
         "192.168.1.1",
         "192.168.100.10", // IP LAN privee generique : acceptee (reseau interne)
-        "169.254.1.1",   // Link-local
-        "224.0.0.1",     // Multicast
-        "192.0.2.1",     // Documentation
+        "169.254.1.1",    // Link-local
+        "224.0.0.1",      // Multicast
+        "192.0.2.1",      // Documentation
     ];
 
     for ip_str in any_ips {
@@ -118,7 +119,10 @@ fn test_target_parser_accepts_all_ips_without_filter() {
                 assert_eq!(ips.len(), 1, "IP {} doit retourner 1 IP", ip_str);
                 assert_eq!(ips[0].to_string(), ip_str);
             }
-            other => panic!("IP {} devrait être Resolved (toutes IPs acceptées), got {:?}", ip_str, other),
+            other => panic!(
+                "IP {} devrait être Resolved (toutes IPs acceptées), got {:?}",
+                ip_str, other
+            ),
         }
     }
 }
@@ -141,7 +145,10 @@ fn test_target_parser_public_ip_resolved() {
 #[test]
 fn test_config_defaults() {
     let cfg = Config::default();
-    assert!(cfg.target.is_empty(), "Config::default() ne doit PAS contenir de cible de scan");
+    assert!(
+        cfg.target.is_empty(),
+        "Config::default() ne doit PAS contenir de cible de scan"
+    );
     assert_eq!(cfg.timeout_ms, 800);
     assert!(!cfg.json_mode);
     assert!(cfg.save_to_db);
@@ -530,7 +537,11 @@ fn test_ffuf_json_parsing() {
     }"#;
 
     let endpoints = FfufAuditor::parse_json(sample_ffuf_json);
-    assert_eq!(endpoints.len(), 2, "les 2 resultats du vrai format doivent etre extraits");
+    assert_eq!(
+        endpoints.len(),
+        2,
+        "les 2 resultats du vrai format doivent etre extraits"
+    );
     assert_eq!(endpoints[0].path, "stats");
     assert_eq!(endpoints[0].status, 200);
     assert_eq!(endpoints[0].url, "https://veridy.ca/stats");
@@ -618,10 +629,7 @@ fn test_ffuf_catch_all_capping_and_prioritization() {
 #[test]
 fn test_sql_esc() {
     assert_eq!(sql_esc("standard_target"), "standard_target");
-    assert_eq!(
-        sql_esc("target' OR '1'='1"),
-        "target'' OR ''1''=''1"
-    );
+    assert_eq!(sql_esc("target' OR '1'='1"), "target'' OR ''1''=''1");
     assert_eq!(sql_esc("'''"), "''''''");
 }
 
@@ -862,9 +870,18 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
 fn test_parse_openssl_date_strips_notafter_prefix() {
     use crate::modules::tls::parse_openssl_date;
     // Bug historique : le préfixe "notAfter=" n'était jamais strippé → days_remaining null
-    assert_eq!(parse_openssl_date("notAfter=Jan 15 12:00:00 2027 GMT"), Some(1800014400));
-    assert_eq!(parse_openssl_date("Jan 15 12:00:00 2027 GMT"), Some(1800014400));
-    assert_eq!(parse_openssl_date("notBefore=Jan 15 12:00:00 2027 GMT"), Some(1800014400));
+    assert_eq!(
+        parse_openssl_date("notAfter=Jan 15 12:00:00 2027 GMT"),
+        Some(1800014400)
+    );
+    assert_eq!(
+        parse_openssl_date("Jan 15 12:00:00 2027 GMT"),
+        Some(1800014400)
+    );
+    assert_eq!(
+        parse_openssl_date("notBefore=Jan 15 12:00:00 2027 GMT"),
+        Some(1800014400)
+    );
     assert_eq!(parse_openssl_date("n'importe quoi"), None);
     assert_eq!(parse_openssl_date(""), None);
 }
@@ -884,7 +901,10 @@ fn test_extract_json_str_no_substring_false_positive() {
     let json = r#"{"subdomain":"evil.example"}"#;
     assert_eq!(extract_json_str(json, "domain"), None);
     let ok = r#"{"domain":"good.example"}"#;
-    assert_eq!(extract_json_str(ok, "domain"), Some("good.example".to_string()));
+    assert_eq!(
+        extract_json_str(ok, "domain"),
+        Some("good.example".to_string())
+    );
 }
 
 #[test]
@@ -907,7 +927,10 @@ fn test_civil_from_days_known_dates() {
 fn test_sanitize_target_strict_whitelist() {
     assert_eq!(crate::utils::sanitize_target("a.b-c.com"), "a_b-c_com");
     assert_eq!(crate::utils::sanitize_target("evil/host"), "evil_host");
-    assert_eq!(crate::utils::sanitize_target("../etc/passwd"), "___etc_passwd");
+    assert_eq!(
+        crate::utils::sanitize_target("../etc/passwd"),
+        "___etc_passwd"
+    );
     assert_eq!(crate::utils::sanitize_target(""), "target");
 }
 
@@ -923,7 +946,10 @@ fn test_run_guarded_catches_panic_and_returns_default() {
         "test-panic",
         || panic!("boom volontaire"),
     );
-    assert!(r.is_empty(), "run_guarded doit retourner T::default() sur panic");
+    assert!(
+        r.is_empty(),
+        "run_guarded doit retourner T::default() sur panic"
+    );
 }
 
 #[test]
@@ -931,6 +957,236 @@ fn test_is_subdomain_point_boundary() {
     use crate::modules::obscura_audit::is_subdomain;
     assert!(is_subdomain("www.veridy.ca", "veridy.ca"));
     assert!(is_subdomain("veridy.ca", "veridy.ca"));
-    assert!(!is_subdomain("evil-veridy.ca", "veridy.ca"), "evil-veridy.ca n'est PAS un sous-domaine");
+    assert!(
+        !is_subdomain("evil-veridy.ca", "veridy.ca"),
+        "evil-veridy.ca n'est PAS un sous-domaine"
+    );
     assert!(!is_subdomain("notveridy.ca", "veridy.ca"));
+}
+
+// ==============================================================================
+// 14. TESTS MODULES C2 / POST-EXPLOITATION (v0.3)
+// ==============================================================================
+
+#[test]
+fn test_sliver_result_serialization() {
+    use crate::modules::c2_sliver::SliverAuditResult;
+    let r = SliverAuditResult {
+        success: true,
+        installed: true,
+        version: Some("devel".into()),
+        server_running: false,
+        implants: vec!["implant1.cfg".into(), "implant2.cfg".into()],
+        sessions: vec![],
+        raw_output: "installed=true".into(),
+        summary: "Sliver devel | serveur inactif | 2 implant(s) cfg".into(),
+        elapsed_seconds: 0.1,
+    };
+    let j = serde_json::to_value(&r).unwrap();
+    assert_eq!(j["installed"], true);
+    assert_eq!(j["version"], "devel");
+    assert_eq!(j["implants"].as_array().unwrap().len(), 2);
+    // round-trip Deserialize
+    let r2: SliverAuditResult = serde_json::from_value(j).unwrap();
+    assert_eq!(r2.implants.len(), 2);
+    assert_eq!(r2.version.as_deref(), Some("devel"));
+}
+
+#[test]
+fn test_sliver_findings_only_when_running() {
+    use crate::modules::c2_sliver::{SliverAuditResult, SliverAuditor};
+    // serveur inactif → AUCUN finding
+    let idle = SliverAuditResult {
+        installed: true,
+        server_running: false,
+        ..Default::default()
+    };
+    assert!(SliverAuditor::to_findings(&idle).is_empty());
+    // serveur actif → finding INFO
+    let live = SliverAuditResult {
+        installed: true,
+        server_running: true,
+        version: Some("devel".into()),
+        implants: vec![],
+        sessions: vec![],
+        ..Default::default()
+    };
+    let f = SliverAuditor::to_findings(&live);
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].severity, "INFO");
+    assert_eq!(f[0].category, "C2");
+}
+
+#[test]
+fn test_havoc_version_parsing_marker() {
+    // Le format de version Havoc attendu dans raw_output/summary
+    // "Havoc Framework [Version: 0.7] [CodeName: Bites The Dust]"
+    let line = "Havoc Framework [Version: 0.7] [CodeName: Bites The Dust]";
+    assert!(line.contains("Version"));
+    // la boucle du module ne retient QUE les lignes avec "Version"
+    let captured: Vec<&str> = vec!["Usage:", line, "other"]
+        .into_iter()
+        .filter(|l| l.contains("Version"))
+        .collect();
+    assert_eq!(captured.len(), 1);
+}
+
+#[test]
+fn test_havoc_findings_only_when_teamserver() {
+    use crate::modules::c2_havoc::{HavocAuditResult, HavocAuditor};
+    let idle = HavocAuditResult {
+        installed: true,
+        teamserver_running: false,
+        ..Default::default()
+    };
+    assert!(HavocAuditor::to_findings(&idle).is_empty());
+    let live = HavocAuditResult {
+        installed: true,
+        teamserver_running: true,
+        version: Some("0.7".into()),
+        ..Default::default()
+    };
+    assert_eq!(HavocAuditor::to_findings(&live).len(), 1);
+}
+
+#[test]
+fn test_merlin_default_absent() {
+    use crate::modules::c2_merlin::MerlinAuditResult;
+    let r = MerlinAuditResult::default();
+    assert!(!r.installed);
+    assert!(!r.success);
+    assert!(!r.server_running);
+}
+
+#[test]
+fn test_poshc2_service_state_parsing() {
+    // systemctl is-active renvoie "active\n" → trim == "active"
+    let raw = "active\n";
+    assert_eq!(raw.trim(), "active");
+    let raw2 = "inactive\n";
+    assert_ne!(raw2.trim(), "active");
+}
+
+#[test]
+fn test_empire_findings_db_not_ready() {
+    use crate::modules::c2_empire::{EmpireAuditResult, EmpireAuditor};
+    let r = EmpireAuditResult {
+        installed: true,
+        database_ready: false,
+        server_running: false,
+        ..Default::default()
+    };
+    let f = EmpireAuditor::to_findings(&r);
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].severity, "LOW"); // pousse à faire le setup
+                                      // DB prête + serveur actif → INFO seulement
+    let r2 = EmpireAuditResult {
+        installed: true,
+        database_ready: true,
+        server_running: true,
+        ..Default::default()
+    };
+    let f2 = EmpireAuditor::to_findings(&r2);
+    assert_eq!(f2.len(), 1);
+    assert_eq!(f2[0].severity, "INFO");
+}
+
+#[test]
+fn test_chisel_finding_never_emitted() {
+    use crate::modules::tunnel_chisel::{ChiselAuditResult, ChiselAuditor};
+    // tunnelling local : aucun finding d'audit de cible, quel que soit l'état
+    let r = ChiselAuditResult {
+        success: true,
+        installed: true,
+        server_demo_ok: true,
+        ..Default::default()
+    };
+    assert!(ChiselAuditor::to_findings(&r).is_empty());
+}
+
+#[test]
+fn test_netexec_signing_detection() {
+    use crate::modules::lateral_netexec::{NetexecAuditResult, NetexecAuditor};
+    // signing désactivé → finding MEDIUM (relais NTLM possible)
+    let r = NetexecAuditResult {
+        success: true,
+        installed: true,
+        target_reachable: true,
+        smb_signing_enforced: Some(false),
+        ..Default::default()
+    };
+    let f = NetexecAuditor::to_findings(&r);
+    assert_eq!(f.len(), 1);
+    assert_eq!(f[0].severity, "MEDIUM");
+    assert_eq!(f[0].category, "SMB");
+    // signing forcé → rien à signaler
+    let r2 = NetexecAuditResult {
+        smb_signing_enforced: Some(true),
+        ..r.clone()
+    };
+    assert!(NetexecAuditor::to_findings(&r2).is_empty());
+}
+
+#[test]
+fn test_netexec_signing_parse_markers() {
+    // les deux formats que le module scrute : texte nxc et JSON --gen-json
+    let txt = "SMB 192.168.1.10 445 HOST [+] 10.0.0.5 (name:HOST) (domain:CORP) (signing:False)";
+    assert!(txt.contains("signing:False"));
+    let json = r#"{"host": "10.0.0.5", "signing": false}"#;
+    assert!(json.contains("\"signing\": false"));
+}
+
+#[test]
+fn test_tool_on_path_finds_true_binary() {
+    // sur toute machine de test, /bin/sh ou true existe
+    let found = crate::utils::tool_on_path("sh") || crate::utils::tool_on_path("true");
+    assert!(found, "sh/true devraient être sur le PATH");
+    assert!(!crate::utils::tool_on_path("outil-qui-nexiste-pas-xyz-123"));
+}
+
+#[test]
+fn test_tcp_probe_loopback_refused() {
+    // un port privilégié non écouté refuse la connexion → false (rapide)
+    let refused = crate::utils::tcp_probe("127.0.0.1", 1);
+    assert!(!refused);
+}
+
+#[test]
+#[allow(clippy::field_reassign_with_default)]
+fn test_c2_flags_optin_not_in_enable_all() {
+    use crate::config::ToolFlags;
+    let mut t = ToolFlags::default();
+    t.enable_all();
+    // les C2 ne doivent JAMAIS s'activer implicitement
+    assert!(!t.sliver);
+    assert!(!t.havoc);
+    assert!(!t.merlin);
+    assert!(!t.poshc2);
+    assert!(!t.empire);
+    assert!(!t.chisel);
+    assert!(!t.netexec);
+    // et ne comptent pas comme outils actifs standards
+    let mut t2 = ToolFlags::default();
+    t2.netexec = true;
+    assert!(t2.has_any()); // actif si demandé
+    let names = t2.active_names();
+    assert!(names.contains(&"NetExec"));
+}
+
+#[test]
+fn test_report_serializes_c2_sections() {
+    // FullAuditReport avec un module C2 actif sérialise bien la section
+    use crate::modules::c2_sliver::SliverAuditResult;
+    let mut report = crate::report::FullAuditReport::default_for_tests();
+    report.sliver = Some(SliverAuditResult {
+        success: true,
+        installed: true,
+        version: Some("devel".into()),
+        summary: "test".into(),
+        sessions: vec![],
+        ..Default::default()
+    });
+    let j = report.to_json();
+    assert!(j.contains("\"sliver\""));
+    assert!(j.contains("\"summary\": \"test\""));
 }

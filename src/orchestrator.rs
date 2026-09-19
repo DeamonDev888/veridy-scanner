@@ -3,14 +3,12 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
+use crate::modules::brand_sec::BrandSecAuditor;
 use crate::modules::c2_empire::EmpireAuditor;
 use crate::modules::c2_havoc::HavocAuditor;
 use crate::modules::c2_merlin::MerlinAuditor;
 use crate::modules::c2_poshc2::PoshC2Auditor;
 use crate::modules::c2_sliver::SliverAuditor;
-use crate::modules::lateral_netexec::NetexecAuditor;
-use crate::modules::tunnel_chisel::ChiselAuditor;
-use crate::modules::brand_sec::BrandSecAuditor;
 use crate::modules::dns::DnsAuditor;
 use crate::modules::dns_hardening::DnsHardeningAuditor;
 use crate::modules::dnsrecon_audit::DnsreconAuditor;
@@ -19,20 +17,22 @@ use crate::modules::ffuf_audit::FfufAuditor;
 use crate::modules::findings::{FindingsEngine, SecurityFinding};
 use crate::modules::geo::GeoAuditor;
 use crate::modules::http::HttpAuditor;
+use crate::modules::http_probe::probe_parallel;
+use crate::modules::lateral_netexec::NetexecAuditor;
 use crate::modules::nikto_deep::NiktoAuditor;
 use crate::modules::nmap_deep::NmapAuditor;
 use crate::modules::nuclei_deep::NucleiAuditor;
 use crate::modules::obscura_audit::ObscuraAuditor;
 use crate::modules::ports::{PortScanner, EXTENDED_TARGET_PORTS};
+use crate::modules::portscan_rustscan::RustScanWrapper;
 use crate::modules::progress::ProgressTracker;
+use crate::modules::sqli_audit::scan_urls_parallel;
 use crate::modules::sslscan_audit::SslscanAuditor;
 use crate::modules::subdomains::SubdomainScanner;
 use crate::modules::tech_stack::TechStackAuditor;
 use crate::modules::theharvester_audit::TheHarvesterAuditor;
-use crate::modules::http_probe::probe_parallel;
-use crate::modules::portscan_rustscan::RustScanWrapper;
-use crate::modules::sqli_audit::scan_urls_parallel;
 use crate::modules::tls::TlsAuditor;
+use crate::modules::tunnel_chisel::ChiselAuditor;
 use crate::modules::vuln_audit::VulnAuditor;
 use crate::modules::waf::WafAuditor;
 use crate::modules::web_endpoints::WebEndpointsAuditor;
@@ -233,7 +233,8 @@ impl AuditOrchestrator {
             let ip_web = ip_web.clone();
             thread::spawn(move || {
                 let t0 = Instant::now();
-                tracker_web.set_running(5, "Détection des fichiers sensibles (.env, /admin, git)...");
+                tracker_web
+                    .set_running(5, "Détection des fichiers sensibles (.env, /admin, git)...");
                 run_guarded(t0, &tracker_web, 5, "Endpoints", move || {
                     WebEndpointsAuditor::audit(&t_web, &ip_web)
                 })
@@ -288,7 +289,9 @@ impl AuditOrchestrator {
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Empreinte CMS, librairies JS & adresses emails...");
-                run_guarded(t0, &tracker_c, idx, "WhatWeb", || TechStackAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "WhatWeb", || {
+                    TechStackAuditor::audit(&t)
+                })
             }))
         } else {
             None
@@ -312,7 +315,9 @@ impl AuditOrchestrator {
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Génération variantes typosquatting & phishing...");
-                run_guarded(t0, &tracker_c, idx, "Dnstwist", || BrandSecAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "Dnstwist", || {
+                    BrandSecAuditor::audit(&t)
+                })
             }))
         } else {
             None
@@ -372,7 +377,9 @@ impl AuditOrchestrator {
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Énumération DNS SRV, zone AXFR & Bind version...");
-                run_guarded(t0, &tracker_c, idx, "Dnsrecon", || DnsreconAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "Dnsrecon", || {
+                    DnsreconAuditor::audit(&t)
+                })
             }))
         } else {
             None
@@ -384,7 +391,9 @@ impl AuditOrchestrator {
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Recherche OSINT emails d'employés & hôtes...");
-                run_guarded(t0, &tracker_c, idx, "theHarvester", || TheHarvesterAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "theHarvester", || {
+                    TheHarvesterAuditor::audit(&t)
+                })
             }))
         } else {
             None
@@ -410,8 +419,7 @@ impl AuditOrchestrator {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Balayage SYN des 65535 ports...");
                 run_guarded(t0, &tracker_c, idx, "RustScan", || {
-                    RustScanWrapper::scan_ports(&t, 3)
-                        .unwrap_or_default()
+                    RustScanWrapper::scan_ports(&t, 3).unwrap_or_default()
                 })
             }))
         } else {
@@ -434,19 +442,13 @@ impl AuditOrchestrator {
         let email_sec_result = if target.parse::<std::net::IpAddr>().is_ok() {
             EmailSecAuditor::audit_skipped_for_ip(target)
         } else {
-            run_guarded(
-                Instant::now(),
-                &tracker,
-                usize::MAX,
-                "Messagerie",
-                || {
-                    EmailSecAuditor::audit(
-                        target,
-                        dns_result.spf_record.as_deref(),
-                        dns_result.dmarc_record.as_deref(),
-                    )
-                },
-            )
+            run_guarded(Instant::now(), &tracker, usize::MAX, "Messagerie", || {
+                EmailSecAuditor::audit(
+                    target,
+                    dns_result.spf_record.as_deref(),
+                    dns_result.dmarc_record.as_deref(),
+                )
+            })
         };
 
         // 5. Exécution conditionnelle de Nmap sur les ports découverts
@@ -488,10 +490,8 @@ impl AuditOrchestrator {
         let httpx_result = if config.tools.httpx {
             if let Some(idx) = idx_httpx {
                 let t0 = Instant::now();
-                let mut targets: Vec<String> = vec![
-                    format!("https://{}", target),
-                    format!("http://{}", target),
-                ];
+                let mut targets: Vec<String> =
+                    vec![format!("https://{}", target), format!("http://{}", target)];
                 for sub in &subdomains_result {
                     targets.push(format!("https://{}", sub.subdomain));
                     targets.push(format!("http://{}", sub.subdomain));
@@ -500,9 +500,7 @@ impl AuditOrchestrator {
                     idx,
                     &format!("Probe httpx sur {} cible(s)...", targets.len()),
                 );
-                let res = run_guarded(t0, &tracker, idx, "Httpx", || {
-                    probe_parallel(targets, 40)
-                });
+                let res = run_guarded(t0, &tracker, idx, "Httpx", || probe_parallel(targets, 40));
                 Some(res)
             } else {
                 None
@@ -526,79 +524,110 @@ impl AuditOrchestrator {
             if let Some(idx) = idx_sliver {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "État du serveur Sliver...");
-                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                #[allow(clippy::redundant_closure)]
+                // closure requise : T: Default sur le resultat, pas le fn
                 let r = run_guarded(t0, &tracker, idx, "Sliver", || SliverAuditor::audit());
                 Some(r)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let havoc_result = if config.tools.havoc {
             if let Some(idx) = idx_havoc {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "État du teamserver Havoc...");
-                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                #[allow(clippy::redundant_closure)]
+                // closure requise : T: Default sur le resultat, pas le fn
                 let r = run_guarded(t0, &tracker, idx, "Havoc", || HavocAuditor::audit());
                 Some(r)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let merlin_result = if config.tools.merlin {
             if let Some(idx) = idx_merlin {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "État du serveur Merlin...");
-                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                #[allow(clippy::redundant_closure)]
+                // closure requise : T: Default sur le resultat, pas le fn
                 let r = run_guarded(t0, &tracker, idx, "Merlin", || MerlinAuditor::audit());
                 Some(r)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let poshc2_result = if config.tools.poshc2 {
             if let Some(idx) = idx_poshc2 {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "État du service PoshC2...");
-                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                #[allow(clippy::redundant_closure)]
+                // closure requise : T: Default sur le resultat, pas le fn
                 let r = run_guarded(t0, &tracker, idx, "PoshC2", || PoshC2Auditor::audit());
                 Some(r)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let empire_result = if config.tools.empire {
             if let Some(idx) = idx_empire {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "État du serveur Empire...");
-                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                #[allow(clippy::redundant_closure)]
+                // closure requise : T: Default sur le resultat, pas le fn
                 let r = run_guarded(t0, &tracker, idx, "Empire", || EmpireAuditor::audit());
                 Some(r)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let chisel_result = if config.tools.chisel {
             if let Some(idx) = idx_chisel {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "Démo tunnelling Chisel (localhost)...");
-                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                #[allow(clippy::redundant_closure)]
+                // closure requise : T: Default sur le resultat, pas le fn
                 let r = run_guarded(t0, &tracker, idx, "Chisel", || ChiselAuditor::audit());
                 Some(r)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let netexec_result = if config.tools.netexec {
             if let Some(idx) = idx_netexec {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "Probe SMB null-session NetExec...");
                 let t = target.clone();
-                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                #[allow(clippy::redundant_closure)]
+                // closure requise : T: Default sur le resultat, pas le fn
                 let r = run_guarded(t0, &tracker, idx, "NetExec", || NetexecAuditor::audit(&t));
                 Some(r)
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         // SQLMap : dépend des endpoints découverts — tourne en fin de chaîne
         let sqli_result = if config.tools.sqlmap {
             if let Some(idx) = idx_sqlmap {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "Injection SQL : analyse des endpoints paramétrés...");
-                let urls: Vec<String> = vec![
-                    format!("https://{}", target),
-                    format!("http://{}", target),
-                ];
-                let res = run_guarded(t0, &tracker, idx, "SQLMap", || {
-                    scan_urls_parallel(urls, 60)
-                });
+                let urls: Vec<String> =
+                    vec![format!("https://{}", target), format!("http://{}", target)];
+                let res = run_guarded(t0, &tracker, idx, "SQLMap", || scan_urls_parallel(urls, 60));
                 Some(res)
             } else {
                 None
