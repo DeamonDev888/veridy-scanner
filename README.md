@@ -68,16 +68,7 @@ sudo apt update && sudo apt full-upgrade   # outils Kali natifs à jour
 veridy_scanner tools                       # diagnostic : présence + environnement
 ```
 
-Seules exceptions (absentes ou différentes dans les dépôts) :
-
-| Outil | Installation |
-|---|---|
-| httpx (ProjectDiscovery) | `go install github.com/projectdiscovery/httpx/cmd/httpx@latest` — ⚠️ ne pas confondre avec le paquet Python homonyme (`/usr/bin/httpx` JA3) : le bon répond à `httpx -version` |
-| subfinder | `go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest` |
-| RustScan | `go install github.com/RustScan/RustScan@latest` |
-| obscura | Voir le README du projet |
-
-Également requis : Rust ≥ 1.75, `openssl`, `curl`, `dig`, `whois` (natifs sur Kali). PostgreSQL optionnel (`--no-db` sinon).
+Également requis : Rust ≥ 1.75, `openssl`, `curl`, `dig`, `whois`, **PostgreSQL 12+** (natifs ou installés sur Kali — `install.sh` installe et initialise PostgreSQL automatiquement).
 
 > `--fast` (Core Rust uniquement) reste disponible en opt-out explicite.
 
@@ -200,7 +191,7 @@ Pour un utilisateur en direct sur le serveur Kali, `veridy` propose une console 
 
 ---
 
-## 🗄️ Base PostgreSQL (optionnelle)
+## 🗄️ Base PostgreSQL (requise)
 
 ```bash
 createdb veridy_audit
@@ -210,7 +201,7 @@ psql -d veridy_audit -f schema_deep.sql
 psql -d veridy_audit -f schema_tools.sql
 ```
 
-12 tables relationnelles `audit_*` : scans, findings, ports, headers, certificats TLS, sous-domaines, géo, email, endpoints, durcissement DNS, sorties d'outils. Sinon, `--no-db` pour le mode éphémère.
+12 tables relationnelles `audit_*` : scans, findings, ports, headers, certificats TLS, sous-domaines, géo, email, endpoints, durcissement DNS, sorties d'outils. Installée et initialisée automatiquement par `install.sh` (création de la base + chargement des schémas).
 
 ---
 

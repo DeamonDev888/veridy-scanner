@@ -10,6 +10,12 @@ Versions : [SemVer](https://semver.org/)
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
 - **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
 
+## [0.2.2] — 2026-09-19
+
+### Modifié
+- README : suppression du paragraphe « exceptions hors dépôts » (httpx/subfinder/RustScan) de la section Prérequis
+- **PostgreSQL désormais requis** dans la documentation (plus « optionnel ») : install.sh l'installe et initialise la base automatiquement
+
 ## [0.2.1] — 2026-09-19
 
 ### Modifié

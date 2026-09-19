@@ -20,7 +20,7 @@ sudo apt update && sudo apt full-upgrade   # garder les outils natifs à jour
 veridy_scanner tools                       # diagnostic environnement
 ```
 
-Exceptions hors dépôts : `httpx`/`subfinder` (ProjectDiscovery) et `RustScan` via `go install` (⚠️ pour httpx, le bon binaire répond à `httpx -version` — le paquet Python homonyme ne fait pas l'affaire). Rust ≥ 1.75 requis.
+Rust ≥ 1.75 requis.
 
 ## Guide pour Agents IA & Automatisation CLI
 
@@ -115,9 +115,9 @@ veridy_scanner example.com -1 -j | jq '{spf: .email_sec.has_spf, dmarc: .email_s
 - **Vulnérabilités web** — libs obsolètes, SRI manquant, mixed content, secrets exposés (clés API dans le HTML)
 - **Géolocalisation** — ASN, organisation, pays, hébergeur
 
-## Persistance PostgreSQL (optionnelle)
+## Persistance PostgreSQL (requise)
 
-12 tables relationnelles `audit_*` (scans, findings, ports, headers, certificats, sous-domaines, géo, email, endpoints…). Sans PostgreSQL, utiliser `--no-db` (mode éphémère).
+12 tables relationnelles `audit_*` (scans, findings, ports, headers, certificats, sous-domaines, géo, email, endpoints…). PostgreSQL est installé et initialisé automatiquement par `install.sh`.
 
 ```bash
 veridy_scanner history 10   # historique des audits catalogués

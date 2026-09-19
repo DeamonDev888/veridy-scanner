@@ -146,7 +146,7 @@ install -m 0755 "target/release/$BIN_NAME" "/usr/local/bin/$BIN_NAME"
 install -m 0755 "launch.sh" /usr/local/bin/veridy
 ok "Commandes disponibles : veridy_scanner, veridy"
 
-# ----- 7. Base PostgreSQL (optionnel) -----
+# ----- 7. Base PostgreSQL (requis — installée par défaut à l'étape 1) -----
 if command -v psql >/dev/null 2>&1; then
     info "Initialisation PostgreSQL…"
     if systemctl is-active --quiet postgresql 2>/dev/null || service postgresql status >/dev/null 2>&1; then
