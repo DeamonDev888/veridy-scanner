@@ -10,6 +10,11 @@ Versions : [SemVer](https://semver.org/)
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
 - **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
 
+## [0.3.1] — 2026-09-19
+
+### Corrigé
+- **Régression 0.3.0** : le gate « outils Kali requis » (REQUIRED_KALI_TOOLS, exit 1 si absent) et le full-scan par défaut avaient été perdus lors de la fusion des modules C2 — restaurés (les flags C2 comptent désormais comme profil explicite)
+
 ## [0.3.0] — 2026-09-19
 
 ### Ajouté

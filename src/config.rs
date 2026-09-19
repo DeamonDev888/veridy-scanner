@@ -390,6 +390,16 @@ struct Cli {
     history: Option<usize>,
 }
 
+impl Cli {
+    fn any_tool_flag(&self) -> bool {
+        self.nmap || self.nuclei || self.nikto || self.waf || self.whatweb
+            || self.sslscan || self.dnstwist || self.ffuf || self.dnsrecon
+            || self.theharvester || self.obscura || self.httpx || self.rustscan
+            || self.sliver || self.havoc || self.merlin || self.poshc2
+            || self.empire || self.chisel || self.netexec
+    }
+}
+
 impl Config {
     pub fn parse() -> Result<Option<Self>, String> {
         let cli = Cli::parse();
@@ -432,7 +442,20 @@ impl Config {
         }
 
         // Construction des flags d'outils : profils → flags → modules
+        // FULL SCAN PAR DÉFAUT : sans profil ni outil explicite, tous les
+        // outils standards sont activés — l'audit doit être exhaustif.
+        // `-1/--fast` = opt-out explicite (Core Rust uniquement).
+        let explicit_profile = cli.full
+            || cli.web
+            || cli.infra
+            || cli.vuln
+            || cli.discovery
+            || !cli.modules.is_empty()
+            || cli.any_tool_flag();
         let mut tools = ToolFlags::default();
+        if !cli.fast && !explicit_profile {
+            tools.enable_all();
+        }
 
         if cli.full {
             tools.enable_all();
@@ -653,6 +676,35 @@ impl Config {
 }
 
 /// Équivalent minimal de `which` : parcours du PATH
+/// Outils Kali REQUIS : l'audit complet est la norme (full scan par défaut).
+/// Le scanner refuse de démarrer s'ils sont absents — pas de scan léger
+/// silencieux pour le moment : un environnement incomplet = audit trompeur.
+pub const REQUIRED_KALI_TOOLS: &[(&str, &str)] = &[
+    ("nmap", "natif Kali — apt install nmap"),
+    ("nuclei", "natif Kali — apt install nuclei"),
+    ("nikto", "natif Kali — apt install nikto"),
+    ("wafw00f", "natif Kali — apt install wafw00f"),
+    ("whatweb", "natif Kali — apt install whatweb"),
+    ("sslscan", "natif Kali — apt install sslscan"),
+    ("dnstwist", "natif Kali — apt install dnstwist"),
+    ("ffuf", "natif Kali — apt install ffuf"),
+    ("dnsrecon", "natif Kali — apt install dnsrecon"),
+    ("theHarvester", "natif Kali — apt install theharvester"),
+    ("obscura", "voir README du projet — Installation"),
+    ("httpx", "go install github.com/projectdiscovery/httpx/cmd/httpx@latest (binaire ProjectDiscovery, pas le paquet Python homonyme)"),
+    ("rustscan", "go install github.com/RustScan/RustScan@latest"),
+    ("subfinder", "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"),
+];
+
+/// Outils requis absents du PATH, avec leur conseil d'installation.
+pub fn missing_required_tools() -> Vec<(&'static str, &'static str)> {
+    REQUIRED_KALI_TOOLS
+        .iter()
+        .filter(|(name, _)| which(name).is_none())
+        .map(|(name, hint)| (*name, *hint))
+        .collect()
+}
+
 fn which(tool: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)
