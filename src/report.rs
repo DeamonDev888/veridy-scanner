@@ -56,6 +56,13 @@ pub struct FullAuditReport {
     pub http_probe: Option<Vec<HttpProbeResult>>,
     pub rustscan: Option<RustScanResult>,
     pub sqli: Option<Vec<SqliFinding>>,
+    pub sliver: Option<crate::modules::c2_sliver::SliverAuditResult>,
+    pub havoc: Option<crate::modules::c2_havoc::HavocAuditResult>,
+    pub merlin: Option<crate::modules::c2_merlin::MerlinAuditResult>,
+    pub poshc2: Option<crate::modules::c2_poshc2::PoshC2AuditResult>,
+    pub empire: Option<crate::modules::c2_empire::EmpireAuditResult>,
+    pub chisel: Option<crate::modules::tunnel_chisel::ChiselAuditResult>,
+    pub netexec: Option<crate::modules::lateral_netexec::NetexecAuditResult>,
     pub findings: Vec<SecurityFinding>,
     pub overall_score: u8,
 }
@@ -91,6 +98,13 @@ impl FullAuditReport {
         http_probe: Option<Vec<HttpProbeResult>>,
         rustscan: Option<RustScanResult>,
         sqli: Option<Vec<SqliFinding>>,
+        sliver: Option<crate::modules::c2_sliver::SliverAuditResult>,
+        havoc: Option<crate::modules::c2_havoc::HavocAuditResult>,
+        merlin: Option<crate::modules::c2_merlin::MerlinAuditResult>,
+        poshc2: Option<crate::modules::c2_poshc2::PoshC2AuditResult>,
+        empire: Option<crate::modules::c2_empire::EmpireAuditResult>,
+        chisel: Option<crate::modules::tunnel_chisel::ChiselAuditResult>,
+        netexec: Option<crate::modules::lateral_netexec::NetexecAuditResult>,
         findings: Vec<SecurityFinding>,
     ) -> Self {
         let mut score: f32 = 100.0;
@@ -136,6 +150,13 @@ impl FullAuditReport {
             http_probe,
             rustscan,
             sqli,
+            sliver,
+            havoc,
+            merlin,
+            poshc2,
+            empire,
+            chisel,
+            netexec,
             findings,
             overall_score,
         }
@@ -145,6 +166,7 @@ impl FullAuditReport {
     /// section, appelée dans l'ordre historique — aucune ligne affichée
     /// ne change (pure motion de code).
     pub fn print_console(&self) {
+        self.print_c2_modules();
         println!(
             "================================================================================"
         );
@@ -960,6 +982,38 @@ impl FullAuditReport {
     }
 
     /// Sérialisation JSON exhaustive du rapport complet (serde_json).
+    /// [23. Modules C2 / post-exploitation] (opt-in)
+    fn print_c2_modules(&self) {
+        let mut lines: Vec<(&str, &str)> = Vec::new();
+        if let Some(ref r) = self.sliver {
+            lines.push(("Sliver", &r.summary));
+        }
+        if let Some(ref r) = self.havoc {
+            lines.push(("Havoc", &r.summary));
+        }
+        if let Some(ref r) = self.merlin {
+            lines.push(("Merlin", &r.summary));
+        }
+        if let Some(ref r) = self.poshc2 {
+            lines.push(("PoshC2", &r.summary));
+        }
+        if let Some(ref r) = self.empire {
+            lines.push(("Empire", &r.summary));
+        }
+        if let Some(ref r) = self.chisel {
+            lines.push(("Chisel", &r.summary));
+        }
+        if let Some(ref r) = self.netexec {
+            lines.push(("NetExec", &r.summary));
+        }
+        if !lines.is_empty() {
+            println!("\n── MODULES C2 / POST-EXPLOITATION ──────────────────────");
+            for (name, summary) in &lines {
+                println!("  {} : {}", name, summary);
+            }
+        }
+    }
+
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|e| {
             format!(r#"{{"error": "serialization failed: {}"}}"#, e)

@@ -22,6 +22,14 @@ pub struct ToolFlags {
     pub httpx: bool,
     pub rustscan: bool,
     pub sqlmap: bool,
+    // ----- Modules C2 / post-exploitation (opt-in explicite) -----
+    pub sliver: bool,
+    pub havoc: bool,
+    pub merlin: bool,
+    pub poshc2: bool,
+    pub empire: bool,
+    pub chisel: bool,
+    pub netexec: bool,
 }
 
 impl ToolFlags {
@@ -60,6 +68,13 @@ impl ToolFlags {
             || self.httpx
             || self.rustscan
             || self.sqlmap
+            || self.sliver
+            || self.havoc
+            || self.merlin
+            || self.poshc2
+            || self.empire
+            || self.chisel
+            || self.netexec
     }
 
     pub fn active_names(&self) -> Vec<&'static str> {
@@ -106,8 +121,27 @@ impl ToolFlags {
         if self.rustscan {
             names.push("RustScan");
         }
-        if self.sqlmap {
-            names.push("SQLMap");
+        // C2 / post-exploitation : opt-in explicite uniquement
+        if self.sliver {
+            names.push("Sliver");
+        }
+        if self.havoc {
+            names.push("Havoc");
+        }
+        if self.merlin {
+            names.push("Merlin");
+        }
+        if self.poshc2 {
+            names.push("PoshC2");
+        }
+        if self.empire {
+            names.push("Empire");
+        }
+        if self.chisel {
+            names.push("Chisel");
+        }
+        if self.netexec {
+            names.push("NetExec");
         }
         names
     }
@@ -317,6 +351,34 @@ struct Cli {
     #[arg(long, aliases = ["sqli"])]
     sqlmap: bool,
 
+    /// Sliver (C2) : état serveur + implants — opt-in explicite
+    #[arg(long)]
+    sliver: bool,
+
+    /// Havoc (C2) : état teamserver — opt-in explicite
+    #[arg(long)]
+    havoc: bool,
+
+    /// Merlin (C2 HTTP/2) : état serveur — opt-in explicite
+    #[arg(long)]
+    merlin: bool,
+
+    /// PoshC2 (C2) : état service — opt-in explicite
+    #[arg(long)]
+    poshc2: bool,
+
+    /// Empire (C2) : état serveur + DB — opt-in explicite
+    #[arg(long)]
+    empire: bool,
+
+    /// Chisel : démo tunnelling local — opt-in explicite
+    #[arg(long)]
+    chisel: bool,
+
+    /// NetExec : probe SMB null-session (non-destructif) — opt-in explicite
+    #[arg(long)]
+    netexec: bool,
+
     /// Afficher l'historique des scans (flag form, cf. sous-commande `history`)
     #[arg(
         short = 'H',
@@ -326,15 +388,6 @@ struct Cli {
         value_name = "LIMIT"
     )]
     history: Option<usize>,
-}
-
-impl Cli {
-    /// Un flag d'outil individuel (--nmap, --nuclei...) est-il présent ?
-    fn any_tool_flag(&self) -> bool {
-        self.nmap || self.nuclei || self.nikto || self.waf || self.whatweb
-            || self.sslscan || self.dnstwist || self.ffuf || self.dnsrecon
-            || self.theharvester || self.obscura || self.httpx || self.rustscan
-    }
 }
 
 impl Config {
@@ -378,22 +431,8 @@ impl Config {
             );
         }
 
-        // FULL SCAN PAR DÉFAUT : sans profil ni outil explicite, tous les
-        // outils standards sont activés — l'audit doit être exhaustif.
-        // `-1/--fast` = opt-out explicite (Core Rust uniquement).
-        let explicit_profile = cli.full
-            || cli.web
-            || cli.infra
-            || cli.vuln
-            || cli.discovery
-            || !cli.modules.is_empty()
-            || cli.any_tool_flag();
-
         // Construction des flags d'outils : profils → flags → modules
         let mut tools = ToolFlags::default();
-        if !cli.fast && !explicit_profile {
-            tools.enable_all();
-        }
 
         if cli.full {
             tools.enable_all();
@@ -415,6 +454,27 @@ impl Config {
             tools.nikto = true;
             tools.nmap = true;
             tools.sqlmap = true;
+        }
+        if cli.sliver {
+            tools.sliver = true;
+        }
+        if cli.havoc {
+            tools.havoc = true;
+        }
+        if cli.merlin {
+            tools.merlin = true;
+        }
+        if cli.poshc2 {
+            tools.poshc2 = true;
+        }
+        if cli.empire {
+            tools.empire = true;
+        }
+        if cli.chisel {
+            tools.chisel = true;
+        }
+        if cli.netexec {
+            tools.netexec = true;
         }
         if cli.discovery {
             tools.ffuf = true;
@@ -487,6 +547,13 @@ impl Config {
                 "httpx" | "probe" | "httpprobe" => tools.httpx = true,
                 "rustscan" | "fast-ports" => tools.rustscan = true,
                 "sqlmap" | "sqli" => tools.sqlmap = true,
+                "sliver" => tools.sliver = true,
+                "havoc" => tools.havoc = true,
+                "merlin" => tools.merlin = true,
+                "poshc2" => tools.poshc2 = true,
+                "empire" => tools.empire = true,
+                "chisel" => tools.chisel = true,
+                "netexec" => tools.netexec = true,
                 "all" | "360" => tools.enable_all(),
                 _ => {
                     return Err(format!("Module inconnu : '{}'", m));
@@ -586,35 +653,6 @@ impl Config {
 }
 
 /// Équivalent minimal de `which` : parcours du PATH
-/// Outils Kali REQUIS : l'audit complet est la norme (full scan par défaut).
-/// Le scanner refuse de démarrer s'ils sont absents — pas de scan léger
-/// silencieux pour le moment : un environnement incomplet = audit trompeur.
-pub const REQUIRED_KALI_TOOLS: &[(&str, &str)] = &[
-    ("nmap", "natif Kali — apt install nmap"),
-    ("nuclei", "natif Kali — apt install nuclei"),
-    ("nikto", "natif Kali — apt install nikto"),
-    ("wafw00f", "natif Kali — apt install wafw00f"),
-    ("whatweb", "natif Kali — apt install whatweb"),
-    ("sslscan", "natif Kali — apt install sslscan"),
-    ("dnstwist", "natif Kali — apt install dnstwist"),
-    ("ffuf", "natif Kali — apt install ffuf"),
-    ("dnsrecon", "natif Kali — apt install dnsrecon"),
-    ("theHarvester", "natif Kali — apt install theharvester"),
-    ("obscura", "voir README du projet — Installation"),
-    ("httpx", "go install github.com/projectdiscovery/httpx/cmd/httpx@latest (binaire ProjectDiscovery, pas le paquet Python homonyme)"),
-    ("rustscan", "go install github.com/RustScan/RustScan@latest"),
-    ("subfinder", "go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"),
-];
-
-/// Outils requis absents du PATH, avec leur conseil d'installation.
-pub fn missing_required_tools() -> Vec<(&'static str, &'static str)> {
-    REQUIRED_KALI_TOOLS
-        .iter()
-        .filter(|(name, _)| which(name).is_none())
-        .map(|(name, hint)| (*name, *hint))
-        .collect()
-}
-
 fn which(tool: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path)

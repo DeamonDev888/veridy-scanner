@@ -822,6 +822,13 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
         None, // http_probe
         None, // rustscan
         None, // sqli
+        None, // sliver
+        None, // havoc
+        None, // merlin
+        None, // poshc2
+        None, // empire
+        None, // chisel
+        None, // netexec
         findings,
     )
 }

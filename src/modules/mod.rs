@@ -1,4 +1,11 @@
 pub mod brand_sec;
+pub mod c2_sliver;
+pub mod c2_havoc;
+pub mod c2_merlin;
+pub mod c2_poshc2;
+pub mod c2_empire;
+pub mod tunnel_chisel;
+pub mod lateral_netexec;
 pub mod db;
 pub mod dns;
 pub mod dns_hardening;

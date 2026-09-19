@@ -10,6 +10,20 @@ Versions : [SemVer](https://semver.org/)
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
 - **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
 
+## [0.3.0] — 2026-09-19
+
+### Ajouté
+- **7 modules C2 / post-exploitation** (opt-in explicite, non-destructifs) :
+  -  : état serveur gRPC + implants configurés
+  -  : état teamserver (port 40056)
+  -  : état serveur HTTP/2 (gRPC :50051)
+  -  : état service (systemd)
+  -  : état serveur + DB MariaDB (setup détecté)
+  -  : démo tunnelling locale (bind 127.0.0.1 éphémère, auto-fermé)
+  -  : probe SMB null-session avec détection signing (finding MEDIUM si non forcé)
+- Helpers  + 
+- Findings C2 câblés au moteur, section console « MODULES C2 / POST-EXPLOITATION », sérialisation JSON complète
+
 ## [0.2.2] — 2026-09-19
 
 ### Modifié

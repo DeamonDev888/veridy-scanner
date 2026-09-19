@@ -126,6 +126,38 @@ pub fn sanitize_target(s: &str) -> String {
 /// Exécute un binaire avec deadline stricte : spawn, lecture des pipes dans des
 /// threads (aucun deadlock de buffer 64 Ko), kill au dépassement. stdin = /dev/null.
 /// Retourne None si le binaire est introuvable OU en timeout (kill).
+/// L'outil est-il présent et exécutable sur le PATH ?
+pub fn tool_on_path(bin: &str) -> bool {
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in path_var.split(':') {
+            if dir.is_empty() {
+                continue;
+            }
+            let candidate = std::path::Path::new(dir).join(bin);
+            if candidate.is_file() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Probe TCP connect (timeout court) — true si le port répond.
+pub fn tcp_probe(host: &str, port: u16) -> bool {
+    use std::io::Write;
+    use std::net::TcpStream;
+    let addr = format!("{}:{}", host, port);
+    let Ok(mut stream) = TcpStream::connect_timeout(
+        &addr.parse().unwrap_or_else(|_| "127.0.0.1:1".parse().unwrap()),
+        std::time::Duration::from_millis(600),
+    ) else {
+        return false;
+    };
+    // certains services ne comptent "ouverts" qu'après un échange ; envoie un byte bénin
+    let _ = stream.write_all(b"\r\n");
+    true
+}
+
 pub fn run_tool(bin: &str, args: &[&str], timeout_secs: u64) -> Option<std::process::Output> {
     run_tool_env(bin, args, timeout_secs, &[])
 }

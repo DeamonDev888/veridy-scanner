@@ -3,6 +3,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::config::Config;
+use crate::modules::c2_empire::EmpireAuditor;
+use crate::modules::c2_havoc::HavocAuditor;
+use crate::modules::c2_merlin::MerlinAuditor;
+use crate::modules::c2_poshc2::PoshC2Auditor;
+use crate::modules::c2_sliver::SliverAuditor;
+use crate::modules::lateral_netexec::NetexecAuditor;
+use crate::modules::tunnel_chisel::ChiselAuditor;
 use crate::modules::brand_sec::BrandSecAuditor;
 use crate::modules::dns::DnsAuditor;
 use crate::modules::dns_hardening::DnsHardeningAuditor;
@@ -129,6 +136,27 @@ impl AuditOrchestrator {
         if config.tools.sqlmap {
             idx_sqlmap = Some(task_names.len());
             task_names.push("SQLMap (Injections SQL)");
+        }
+        if config.tools.sliver {
+            task_names.push("Sliver (C2)");
+        }
+        if config.tools.havoc {
+            task_names.push("Havoc (C2)");
+        }
+        if config.tools.merlin {
+            task_names.push("Merlin (C2)");
+        }
+        if config.tools.poshc2 {
+            task_names.push("PoshC2 (C2)");
+        }
+        if config.tools.empire {
+            task_names.push("Empire (C2)");
+        }
+        if config.tools.chisel {
+            task_names.push("Chisel (Tunnel)");
+        }
+        if config.tools.netexec {
+            task_names.push("NetExec (Lateral)");
         }
 
         let progress_enabled = !config.json_mode;
@@ -483,6 +511,82 @@ impl AuditOrchestrator {
             None
         };
 
+        // ===== Modules C2 / post-exploitation (opt-in) =====
+        // Ces wrappers auditent l'OUTIL local (état serveur/install) sauf NetExec
+        // qui probe la cible en null-session non-destructive. Jamais d'exploitation.
+        let idx_sliver = task_names.iter().position(|n| *n == "Sliver (C2)");
+        let idx_havoc = task_names.iter().position(|n| *n == "Havoc (C2)");
+        let idx_merlin = task_names.iter().position(|n| *n == "Merlin (C2)");
+        let idx_poshc2 = task_names.iter().position(|n| *n == "PoshC2 (C2)");
+        let idx_empire = task_names.iter().position(|n| *n == "Empire (C2)");
+        let idx_chisel = task_names.iter().position(|n| *n == "Chisel (Tunnel)");
+        let idx_netexec = task_names.iter().position(|n| *n == "NetExec (Lateral)");
+
+        let sliver_result = if config.tools.sliver {
+            if let Some(idx) = idx_sliver {
+                let t0 = Instant::now();
+                tracker.set_running(idx, "État du serveur Sliver...");
+                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                let r = run_guarded(t0, &tracker, idx, "Sliver", || SliverAuditor::audit());
+                Some(r)
+            } else { None }
+        } else { None };
+        let havoc_result = if config.tools.havoc {
+            if let Some(idx) = idx_havoc {
+                let t0 = Instant::now();
+                tracker.set_running(idx, "État du teamserver Havoc...");
+                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                let r = run_guarded(t0, &tracker, idx, "Havoc", || HavocAuditor::audit());
+                Some(r)
+            } else { None }
+        } else { None };
+        let merlin_result = if config.tools.merlin {
+            if let Some(idx) = idx_merlin {
+                let t0 = Instant::now();
+                tracker.set_running(idx, "État du serveur Merlin...");
+                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                let r = run_guarded(t0, &tracker, idx, "Merlin", || MerlinAuditor::audit());
+                Some(r)
+            } else { None }
+        } else { None };
+        let poshc2_result = if config.tools.poshc2 {
+            if let Some(idx) = idx_poshc2 {
+                let t0 = Instant::now();
+                tracker.set_running(idx, "État du service PoshC2...");
+                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                let r = run_guarded(t0, &tracker, idx, "PoshC2", || PoshC2Auditor::audit());
+                Some(r)
+            } else { None }
+        } else { None };
+        let empire_result = if config.tools.empire {
+            if let Some(idx) = idx_empire {
+                let t0 = Instant::now();
+                tracker.set_running(idx, "État du serveur Empire...");
+                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                let r = run_guarded(t0, &tracker, idx, "Empire", || EmpireAuditor::audit());
+                Some(r)
+            } else { None }
+        } else { None };
+        let chisel_result = if config.tools.chisel {
+            if let Some(idx) = idx_chisel {
+                let t0 = Instant::now();
+                tracker.set_running(idx, "Démo tunnelling Chisel (localhost)...");
+                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                let r = run_guarded(t0, &tracker, idx, "Chisel", || ChiselAuditor::audit());
+                Some(r)
+            } else { None }
+        } else { None };
+        let netexec_result = if config.tools.netexec {
+            if let Some(idx) = idx_netexec {
+                let t0 = Instant::now();
+                tracker.set_running(idx, "Probe SMB null-session NetExec...");
+                let t = target.clone();
+                #[allow(clippy::redundant_closure)] // closure requise : T: Default sur le resultat, pas le fn
+                let r = run_guarded(t0, &tracker, idx, "NetExec", || NetexecAuditor::audit(&t));
+                Some(r)
+            } else { None }
+        } else { None };
+
         // SQLMap : dépend des endpoints découverts — tourne en fin de chaîne
         let sqli_result = if config.tools.sqlmap {
             if let Some(idx) = idx_sqlmap {
@@ -618,6 +722,28 @@ impl AuditOrchestrator {
             }
         }
 
+        if let Some(ref sl) = sliver_result {
+            findings.extend(SliverAuditor::to_findings(sl));
+        }
+        if let Some(ref hv) = havoc_result {
+            findings.extend(HavocAuditor::to_findings(hv));
+        }
+        if let Some(ref me) = merlin_result {
+            findings.extend(MerlinAuditor::to_findings(me));
+        }
+        if let Some(ref po) = poshc2_result {
+            findings.extend(PoshC2Auditor::to_findings(po));
+        }
+        if let Some(ref em) = empire_result {
+            findings.extend(EmpireAuditor::to_findings(em));
+        }
+        if let Some(ref ne) = netexec_result {
+            findings.extend(NetexecAuditor::to_findings(ne));
+        }
+        if let Some(ref ch) = chisel_result {
+            findings.extend(ChiselAuditor::to_findings(ch));
+        }
+
         let duration = start_time.elapsed();
         let timestamp = iso_timestamp();
 
@@ -650,6 +776,13 @@ impl AuditOrchestrator {
             httpx_result,
             rustscan_result,
             sqli_result,
+            sliver_result,
+            havoc_result,
+            merlin_result,
+            poshc2_result,
+            empire_result,
+            chisel_result,
+            netexec_result,
             findings,
         )
     }
