@@ -1,0 +1,10 @@
+# Normalisation : LF dans le repo (les scripts bash et Rust exigent LF)
+* text=auto eol=lf
+*.sh text eol=lf
+*.rs text eol=lf
+*.toml text eol=lf
+*.lock text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.png binary
+*.svg text

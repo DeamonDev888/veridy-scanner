@@ -492,7 +492,7 @@ show_subdomains() {
 # ------------------------------------------------------------------------------
 # Show Geo Records
 # ------------------------------------------------------------------------------
-show_geolocation() {
+show_compliance() {
     show_cursor
     show_banner
     echo -e "${C_BOLD}${C_YELLOW}[*] REGISTRE GÉOLOCALISATION DES HÉBERGEMENTS :${C_RST}\n"
@@ -1627,7 +1627,7 @@ interactive_tui() {
                             2) show_scan_detail_tui ;;
                             3) show_findings_tui ;;
                             4) show_subdomains ;;
-                            5) show_geolocation ;;
+                            5) show_compliance ;;
                             6) show_stats ;;
                             7) open_psql_shell ;;
                         esac
@@ -1705,7 +1705,7 @@ EXPLORATION DE LA BASE POSTGRESQL (12 TABLES):
   --scan <ID>               Inspecter les détails techniques complets d'un scan
   --findings [SEVERITE]     Lister les constats (ex: --findings CRITICAL ou HIGH)
   --subdomains              Lister les sous-domaines découverts et cartographiés
-  --geolocation             Afficher le registre de géolocalisation et juridiction d'hébergement
+  --compliance              Afficher le registre de géolocalisation et juridiction d'hébergement
   --psql                    Ouvrir un shell SQL interactif sur la base veridy_audit
 
 GESTION DES PROCESSUS & BATCHS:
@@ -1923,8 +1923,8 @@ while [[ $# -gt 0 ]]; do
             show_subdomains
             exit 0
             ;;
-        --geolocation)
-            show_geolocation
+        --compliance)
+            show_compliance
             exit 0
             ;;
         --psql)

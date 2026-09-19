@@ -1,0 +1,170 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 630" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="terminal-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#080c14"/>
+      <stop offset="50%" stop-color="#0b1120"/>
+      <stop offset="100%" stop-color="#050811"/>
+    </linearGradient>
+
+    <!-- Border Glow Gradient -->
+    <linearGradient id="border-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.8"/>
+      <stop offset="50%" stop-color="#a855f7" stop-opacity="0.6"/>
+      <stop offset="100%" stop-color="#ec4899" stop-opacity="0.8"/>
+    </linearGradient>
+
+    <!-- Logo Gradient -->
+    <linearGradient id="logo-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="40%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#c084fc"/>
+    </linearGradient>
+
+    <!-- Subtle Glow Filter -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="card-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#000000" flood-opacity="0.85"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="15" flood-color="#00f0ff" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+
+  <style>
+    .mono { font-family: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, "Courier New", monospace; }
+    .neon-text { fill: url(#logo-grad); filter: url(#glow); font-weight: 800; }
+    .sub-banner { fill: #38bdf8; font-weight: 700; letter-spacing: 4px; font-size: 11px; }
+    .hud-header { fill: #c084fc; font-weight: 700; font-size: 13px; }
+    .hud-dim { fill: #64748b; font-size: 12px; }
+    .hud-cyan { fill: #22d3ee; font-weight: 600; font-size: 12px; }
+    .hud-yellow { fill: #facc15; font-weight: 600; font-size: 12px; }
+    .hud-green { fill: #4ade80; font-weight: 700; font-size: 12px; }
+    .hud-white { fill: #f8fafc; font-size: 12px; }
+    .hud-border { stroke: #334155; stroke-width: 1; fill: none; }
+    .hud-accent-border { stroke: #a855f7; stroke-width: 1.2; fill: none; }
+    .activity-label { fill: #f43f5e; font-weight: 700; font-size: 12px; }
+    .activity-text { fill: #e2e8f0; font-size: 12px; }
+  </style>
+
+  <!-- Background Terminal Window Container -->
+  <rect x="25" y="20" width="900" height="590" rx="16" fill="url(#terminal-bg)" stroke="url(#border-glow)" stroke-width="1.8" filter="url(#card-shadow)"/>
+
+  <!-- Terminal Title Bar -->
+  <path d="M 25 36 A 16 16 0 0 1 41 20 L 909 20 A 16 16 0 0 1 925 36 L 925 62 L 25 62 Z" fill="#0d1527"/>
+  <line x1="25" y1="62" x2="925" y2="62" stroke="#1e293b" stroke-width="1"/>
+
+  <!-- Window Controls -->
+  <circle cx="52" cy="41" r="6" fill="#ef4444"/>
+  <circle cx="74" cy="41" r="6" fill="#f59e0b"/>
+  <circle cx="96" cy="41" r="6" fill="#10b981"/>
+
+  <!-- Terminal Window Title -->
+  <g class="mono">
+    <text x="475" y="46" text-anchor="middle" fill="#94a3b8" font-size="12" font-weight="600" letter-spacing="0.5">demon@ghostcybesrv09: ~/veridy_scanner (bash) — 900x590</text>
+  </g>
+
+  <!-- ================= TUI LOGO SECTION ================= -->
+  <g class="mono" transform="translate(55, 80)">
+    <!-- ASCII Art Veridy Outer Box -->
+    <rect x="0" y="0" width="840" height="150" rx="8" fill="#070d1e" stroke="#8b5cf6" stroke-width="1.4" stroke-opacity="0.8"/>
+
+    <!-- VERIDY Big ASCII Blocks -->
+    <text x="420" y="32" text-anchor="middle" class="neon-text" font-size="13">██╗   ██╗███████╗██████╗ ██╗██████╗ ██╗   ██╗</text>
+    <text x="420" y="47" text-anchor="middle" class="neon-text" font-size="13">██║   ██║██╔════╝██╔══██╗██║██╔══██╗╚██╗ ██╔╝</text>
+    <text x="420" y="62" text-anchor="middle" class="neon-text" font-size="13">██║   ██║█████╗  ██████╔╝██║██║  ██║ ╚████╔╝ </text>
+    <text x="420" y="77" text-anchor="middle" class="neon-text" font-size="13">╚██╗ ██╔╝██╔══╝  ██╔══██╗██║██║  ██║  ╚██╔╝  </text>
+    <text x="420" y="92" text-anchor="middle" class="neon-text" font-size="13"> ╚████╔╝ ███████╗██║  ██║██║██████╔╝   ██║   </text>
+    <text x="420" y="107" text-anchor="middle" class="neon-text" font-size="13">  ╚═══╝  ╚══════╝╚═╝  ╚═╝╚═╝╚═════╝    ╚═╝   </text>
+
+    <!-- Subtitle Banner -->
+    <line x1="120" y1="122" x2="720" y2="122" stroke="#38bdf8" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="420" y="136" text-anchor="middle" class="sub-banner">CYBER INTELLIGENCE &amp; OFFENSIVE SURFACE ENGINE</text>
+  </g>
+
+  <!-- ================= TUI LIVE MONITOR (HUD) ================= -->
+  <g class="mono" transform="translate(55, 250)">
+    <!-- Monitor Header Box -->
+    <rect x="0" y="0" width="840" height="60" rx="6" fill="#0c1427" class="hud-accent-border"/>
+    <text x="20" y="24" class="hud-header">&gt;&gt; VERIDY OFFENSIVE ENGINE 360° — MONITOR D&apos;AUDIT EN DIRECT &lt;&lt;</text>
+    <text x="20" y="46" class="hud-white">Cible : <tspan class="hud-yellow">target.veridy.ca</tspan>  <tspan class="hud-dim">│</tspan>  Durée : <tspan class="hud-cyan">00:24s</tspan>  <tspan class="hud-dim">│</tspan>  Moteurs actifs : <tspan class="hud-green">8/21</tspan>  <tspan class="hud-dim">│</tspan>  Status : <tspan class="hud-cyan">SCANNING</tspan></text>
+
+    <!-- Progress Bar -->
+    <g transform="translate(0, 80)">
+      <text x="10" y="14" class="hud-white">Progression : [</text>
+      <!-- Filled -->
+      <rect x="130" y="3" width="280" height="14" rx="2" fill="#06b6d4"/>
+      <!-- Unfilled -->
+      <rect x="410" y="3" width="170" height="14" rx="2" fill="#1e293b"/>
+      <text x="595" y="15" class="hud-white">]</text>
+      <text x="615" y="15" class="hud-yellow" font-weight="bold">62%</text>
+      <text x="660" y="15" class="hud-dim">(13/21 modules terminés)</text>
+    </g>
+
+    <!-- Tasks Grid Box -->
+    <g transform="translate(0, 115)">
+      <!-- Outer grid -->
+      <rect x="0" y="0" width="840" height="135" rx="6" fill="#080f1d" class="hud-border"/>
+      <line x1="420" y1="0" x2="420" y2="135" class="hud-border"/>
+
+      <!-- Row 1 -->
+      <g transform="translate(15, 25)">
+        <text class="hud-green">[✓]</text>
+        <text x="30" class="hud-white">DNS Hardening Audit</text>
+        <text x="320" class="hud-green">[ 1.2s]</text>
+      </g>
+      <g transform="translate(435, 25)">
+        <text class="hud-cyan">[⚙]</text>
+        <text x="30" class="hud-white">RustScan Fast Ports</text>
+        <text x="310" class="hud-yellow">[EN COURS]</text>
+      </g>
+
+      <!-- Row 2 -->
+      <g transform="translate(15, 55)">
+        <text class="hud-green">[✓]</text>
+        <text x="30" class="hud-white">TLS &amp; SSL Ciphers Probe</text>
+        <text x="320" class="hud-green">[ 2.4s]</text>
+      </g>
+      <g transform="translate(435, 55)">
+        <text class="hud-cyan">[⚙]</text>
+        <text x="30" class="hud-white">Nuclei CVE Engine</text>
+        <text x="310" class="hud-yellow">[EN COURS]</text>
+      </g>
+
+      <!-- Row 3 -->
+      <g transform="translate(15, 85)">
+        <text class="hud-green">[✓]</text>
+        <text x="30" class="hud-white">Subdomain Discovery</text>
+        <text x="320" class="hud-green">[ 3.8s]</text>
+      </g>
+      <g transform="translate(435, 85)">
+        <text class="hud-cyan">[⚙]</text>
+        <text x="30" class="hud-white">SQLi Active Fuzzing</text>
+        <text x="310" class="hud-yellow">[EN COURS]</text>
+      </g>
+
+      <!-- Row 4 -->
+      <g transform="translate(15, 115)">
+        <text class="hud-green">[✓]</text>
+        <text x="30" class="hud-white">Email Sec (SPF/DMARC)</text>
+        <text x="320" class="hud-green">[ 0.6s]</text>
+      </g>
+      <g transform="translate(435, 115)">
+        <text class="hud-cyan">[⚙]</text>
+        <text x="30" class="hud-white">HTTPx &amp; WAF Fingerprint</text>
+        <text x="310" class="hud-yellow">[EN COURS]</text>
+      </g>
+    </g>
+
+    <!-- Activity Line -->
+    <g transform="translate(5, 275)">
+      <text x="0" y="0" class="activity-label">⚡ Activité :</text>
+      <text x="95" y="0" class="activity-text">[Nuclei CVE Engine] Testing CVE-2023-4863 on target https://target.veridy.ca ...</text>
+    </g>
+  </g>
+</svg>
