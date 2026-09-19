@@ -4,6 +4,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Language-Rust%202021-orange?style=for-the-badge&logo=rust" alt="Rust">
+  <img src="https://img.shields.io/crates/v/veridy_scanner.svg?style=for-the-badge&color=orange" alt="crates.io">
   <img src="https://img.shields.io/badge/Platform-Kali%20Linux%20Rolling-blue?style=for-the-badge&logo=kali-linux" alt="Kali Linux">
   <img src="https://img.shields.io/badge/Database-PostgreSQL%2012--Tables-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL">
   <img src="https://img.shields.io/badge/License-Apache%202.0-green?style=for-the-badge" alt="License">
@@ -21,7 +22,7 @@
 
 ## 📦 Installation
 
-### Méthode 1 — Cargo (crates.io)
+### Méthode 1 — Cargo (crates.io) ✅
 
 ```bash
 cargo install veridy_scanner

@@ -4,7 +4,7 @@
 
 **Moteur modulaire d'audit de sécurité offensif et de cartographie de surface d'attaque** — exécutable par un opérateur humain (TUI interactif) ou un agent IA autonome (CLI, JSON natif).
 
-![Rust](https://img.shields.io/badge/Language-Rust%202021-orange?style=flat-square&logo=rust) ![Kali](https://img.shields.io/badge/Platform-Kali%20Linux-blue?style=flat-square&logo=kali-linux) ![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791?style=flat-square&logo=postgresql) ![License](https://img.shields.io/badge/License-Apache%202.0-green?style=flat-square)
+![Rust](https://img.shields.io/badge/Language-Rust%202021-orange?style=flat-square&logo=rust) ![Kali](https://img.shields.io/badge/Platform-Kali%20Linux-blue?style=flat-square&logo=kali-linux) ![PostgreSQL](https://img.shields.io/badge/Database-PostgreSQL-336791?style=flat-square&logo=postgresql) ![License](https://img.shields.io/badge/License-Apache%202.0-green?style=flat-square) ![crates.io](https://img.shields.io/crates/v/veridy_scanner.svg?color=orange&style=flat-square) ![downloads](https://img.shields.io/crates/d/veridy_scanner.svg?style=flat-square)
 
 ## Installation
 

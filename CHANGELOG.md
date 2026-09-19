@@ -5,6 +5,9 @@ Versions : [SemVer](https://semver.org/)
 
 ## [Unreleased] — en cours
 
+### Publié
+- **2026-09-19 : v0.1.0 publié sur crates.io** — https://crates.io/crates/veridy_scanner
+
 ### Ajouté
 - 10 enrichissements findings (attestations positives + signaux offensifs) — bannières ports, DKIM trouvé, DMARC p=reject, CAA actifs, PTR hébergeur, MX, robots.txt recon, CSP unsafe-inline, expiration TLS 45j, MTA-STS TXT-sans-endpoint, sous-domaines vivants/morts + IPs
 - Gate de contexte : IP nue = pas de checks DNS/email/subdomains ; 443/HTTP fermé = INFO discret (pas CRITICAL) ; IP privée = pas de finding géo
