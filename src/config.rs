@@ -21,6 +21,8 @@ pub struct ToolFlags {
     pub httpx: bool,
     pub rustscan: bool,
     pub sqlmap: bool,
+    /// Loot des fichiers sensibles trouvés (opt-in explicite, exclus de enable_all)
+    pub loot: bool,
     // ----- Modules C2 / post-exploitation (opt-in explicite) -----
     pub sliver: bool,
     pub havoc: bool,
@@ -67,6 +69,7 @@ impl ToolFlags {
             || self.httpx
             || self.rustscan
             || self.sqlmap
+            || self.loot
             || self.sliver
             || self.havoc
             || self.merlin
@@ -354,6 +357,10 @@ struct Cli {
     #[arg(long, aliases = ["sqli"])]
     sqlmap: bool,
 
+    /// Loot : téléchargement + SHA-256 des fichiers sensibles trouvés (opt-in explicite)
+    #[arg(long)]
+    loot: bool,
+
     /// Sliver (C2) : état serveur + implants — opt-in explicite
     #[arg(long)]
     sliver: bool,
@@ -529,6 +536,10 @@ impl Config {
             tools.sqlmap = true;
         }
 
+        if cli.loot {
+            tools.loot = true;
+        }
+
         for m in &cli.modules {
             match m.trim().to_lowercase().as_str() {
                 "nmap" => tools.nmap = true,
@@ -546,6 +557,7 @@ impl Config {
                 "httpx" | "probe" | "httpprobe" => tools.httpx = true,
                 "rustscan" | "fast-ports" => tools.rustscan = true,
                 "sqlmap" | "sqli" => tools.sqlmap = true,
+                "loot" => tools.loot = true,
                 "sliver" => tools.sliver = true,
                 "havoc" => tools.havoc = true,
                 "merlin" => tools.merlin = true,

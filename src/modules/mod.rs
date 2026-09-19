@@ -15,6 +15,7 @@ pub mod geo;
 pub mod http;
 pub mod http_probe;
 pub mod lateral_netexec;
+pub mod loot;
 pub mod nikto_deep;
 pub mod nmap_deep;
 pub mod nuclei_deep;

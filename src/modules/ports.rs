@@ -145,6 +145,7 @@ fn probe_port(target: &str, port: u16, timeout: Duration) -> Option<PortScanResu
 
                 // Tentative de lecture spontanée (SSH, FTP, SMTP)
                 let mut buf = [0u8; 256];
+                let __t1 = std::time::Instant::now();
                 if let Ok(n) = stream.read(&mut buf) {
                     if n > 0 {
                         let s = String::from_utf8_lossy(&buf[..n]).trim().to_string();

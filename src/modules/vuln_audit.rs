@@ -237,6 +237,34 @@ impl VulnAuditor {
         for (pat, title, sev) in secret_patterns {
             if let Ok(re) = Regex::new(pat) {
                 if re.is_match(html) {
+                    // Validation ACTIVE pour les clés Google : une clé referer-restricted
+                    // n'est pas exploitable => déclassée LOW au lieu de HIGH (faux positif).
+                    let mut eff_sev = *sev;
+                    if pat.starts_with("AIza") {
+                        if let Some(m) = re.find(html) {
+                            let key = m.as_str();
+                            match validate_google_key(key) {
+                                GoogleKeyStatus::FullyUsable => {}
+                                GoogleKeyStatus::Restricted => eff_sev = "LOW",
+                                GoogleKeyStatus::NetworkError => {} // conservé tel quel
+                            }
+                            if eff_sev == "LOW" {
+                                res.findings.push(VulnFinding {
+                                    id: "vuln-secret-exposure".into(),
+                                    severity: "LOW",
+                                    category: "SECRETS",
+                                    title: "Clé API Google exposée mais restreinte (referer/IP)".into(),
+                                    description: format!(
+                                        "Clé {}... visible dans le HTML public, mais l'API Google répond REQUEST_DENIED : elle est protégée par des restrictions referer/IP. Non exploitable directement.",
+                                        &key[..10.min(key.len())]
+                                    ),
+                                    fix: "Conserver les restrictions; envisager une rotation de la clé et un préfixe crypto pour durcir davantage.".into(),
+                                    owasp: "A02:2021 - Cryptographic Failures",
+                                });
+                                continue;
+                            }
+                        }
+                    }
                     res.findings.push(VulnFinding {
                         id: "vuln-secret-exposure".into(),
                         severity: match *sev {
@@ -316,5 +344,45 @@ impl VulnAuditor {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum GoogleKeyStatus {
+    /// L'API répond 200 : la clé fonctionne depuis n'importe où => réellement exploitable.
+    FullyUsable,
+    /// REQUEST_DENIED / 403 : restrictions referer ou IP en place => non exploitable.
+    Restricted,
+    /// Réseau indisponible : on conserve la sévérité d'origine (prudence).
+    NetworkError,
+}
+
+/// Teste une clé API Google contre l'endpoint staticmap (coût nul, quota gratuit).
+fn validate_google_key(key: &str) -> GoogleKeyStatus {
+    let url = format!(
+        "https://maps.googleapis.com/maps/api/staticmap?center=montreal&size=64x64&key={}",
+        key
+    );
+    let out = crate::utils::run_tool(
+        "curl",
+        &[
+            "-s",
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            "--max-time",
+            "8",
+            &url,
+        ],
+        10,
+    );
+    let code: Option<u16> = out
+        .as_ref()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok());
+    match code {
+        Some(200) => GoogleKeyStatus::FullyUsable,
+        Some(400) | Some(403) => GoogleKeyStatus::Restricted,
+        _ => GoogleKeyStatus::NetworkError,
     }
 }

@@ -481,6 +481,27 @@ impl DatabaseManager {
             );
         }
 
+        // Loot : persistance des fichiers exfiltrés (opt-in via --loot)
+        if let Some(ref loot) = report.loot {
+            for entry in &loot.entries {
+                detail_sql.push_str(&format!(
+                    "INSERT INTO audit_loot (scan_id, url, local_path, size_bytes, sha256, content_type, status_code, severity, category, timestamp, first_64_bytes_hex) \
+                     VALUES ({}, '{}', '{}', {}, '{}', '{}', {}, '{}', '{}', '{}', '{}');\n",
+                    scan_id,
+                    sql_esc(&entry.url),
+                    sql_esc(&entry.local_path),
+                    entry.size_bytes,
+                    entry.sha256.clone(),
+                    sql_esc(&entry.content_type),
+                    entry.status_code,
+                    entry.severity,
+                    entry.category,
+                    entry.timestamp,
+                    sql_esc(&entry.first_64_bytes_hex),
+                ));
+            }
+        }
+
         detail_sql.push_str("COMMIT;\n");
 
         // Exécution du batch complet

@@ -22,9 +22,25 @@ pub struct FfufAuditResult {
 pub struct FfufAuditor;
 
 impl FfufAuditor {
-    pub fn audit(target: &str) -> FfufAuditResult {
+    pub fn audit(target: &str, ports_hint: &[u16]) -> FfufAuditResult {
         let start = Instant::now();
-        let target_url = format!("https://{}/FUZZ", target);
+        // Schéma + port dynamiques. Priorité : le premier port ouvert détecté par le scan de ports
+        // (443 -> https, sinon http sur ce port). Fallback : https standard sur le domaine.
+        let (host_part, explicit_port) = match target.rsplit_once(':') {
+            Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) && !p.is_empty() => {
+                (h.to_string(), Some(p.to_string()))
+            }
+            _ => (target.to_string(), None),
+        };
+        let port: Option<u16> = explicit_port
+            .and_then(|p| p.parse().ok())
+            .or_else(|| ports_hint.first().copied());
+        let (scheme, authority) = match port {
+            Some(443) => ("https", host_part.clone()),
+            Some(p) => ("http", format!("{}:{}", host_part, p)),
+            None => ("https", host_part.clone()),
+        };
+        let target_url = format!("{}://{}/FUZZ", scheme, authority);
         let pid = std::process::id();
         let tmp_output = format!(
             "/tmp/ffuf_{}_{}.json",
@@ -54,7 +70,7 @@ impl FfufAuditor {
                 "-mc",
                 "200,204",
                 "-fc",
-                "404,403,301,302",
+                "404,301,302",
                 "-fs",
                 "0",
                 "-maxtime",

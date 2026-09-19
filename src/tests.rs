@@ -850,6 +850,7 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
         None,
         None, // http_probe
         None, // rustscan
+        None, // loot
         None, // sqli
         None, // sliver
         None, // havoc

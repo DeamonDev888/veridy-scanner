@@ -8,6 +8,7 @@ use crate::modules::findings::SecurityFinding;
 use crate::modules::geo::GeoComplianceResult;
 use crate::modules::http::HttpAuditResult;
 use crate::modules::http_probe::HttpProbeResult;
+use crate::modules::loot::LootResult;
 use crate::modules::nikto_deep::NiktoAuditResult;
 use crate::modules::nmap_deep::NmapAuditResult;
 use crate::modules::nuclei_deep::NucleiAuditResult;
@@ -42,6 +43,7 @@ pub struct FullAuditReport {
     pub dns_hardening: DnsHardeningResult,
     pub vuln_audit: VulnAuditResult,
     pub nmap: Option<NmapAuditResult>,
+    pub loot: Option<LootResult>,
     pub nuclei: Option<NucleiAuditResult>,
     pub nikto: Option<NiktoAuditResult>,
     pub waf: Option<WafResult>,
@@ -84,6 +86,7 @@ impl FullAuditReport {
         dns_hardening: DnsHardeningResult,
         vuln_audit: VulnAuditResult,
         nmap: Option<NmapAuditResult>,
+        loot: Option<LootResult>,
         nuclei: Option<NucleiAuditResult>,
         nikto: Option<NiktoAuditResult>,
         waf: Option<WafResult>,
@@ -136,6 +139,7 @@ impl FullAuditReport {
             dns_hardening,
             vuln_audit,
             nmap,
+            loot,
             nuclei,
             nikto,
             waf,
@@ -1048,6 +1052,7 @@ impl FullAuditReport {
             web_endpoints: Default::default(),
             dns_hardening: Default::default(),
             vuln_audit: Default::default(),
+            loot: None,
             nmap: None,
             nuclei: None,
             nikto: None,

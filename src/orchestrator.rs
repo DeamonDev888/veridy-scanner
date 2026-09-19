@@ -19,6 +19,7 @@ use crate::modules::geo::GeoAuditor;
 use crate::modules::http::HttpAuditor;
 use crate::modules::http_probe::probe_parallel;
 use crate::modules::lateral_netexec::NetexecAuditor;
+use crate::modules::loot::LootCollector;
 use crate::modules::nikto_deep::NiktoAuditor;
 use crate::modules::nmap_deep::NmapAuditor;
 use crate::modules::nuclei_deep::NucleiAuditor;
@@ -159,6 +160,10 @@ impl AuditOrchestrator {
             task_names.push("NetExec (Lateral)");
         }
 
+        // Ports ouverts partagés : remplis par le scan de ports, consommés par ffuf
+        let open_ports_shared: Arc<std::sync::Mutex<Vec<u16>>> =
+            Arc::new(std::sync::Mutex::new(Vec::new()));
+
         let progress_enabled = !config.json_mode;
         let tracker = ProgressTracker::new(target, &task_names, progress_enabled);
         let ticker_handle = tracker.start();
@@ -168,12 +173,18 @@ impl AuditOrchestrator {
         let t_ports = target.clone();
         let custom_ports = config.custom_ports.clone();
         let timeout_ms = config.timeout_ms;
+        let shared_ports_for_thread = Arc::clone(&open_ports_shared);
         let handle_ports = thread::spawn(move || {
             let t0 = Instant::now();
             tracker_ports.set_running(0, "Balayage SYN/Connect des 75+ ports critiques...");
             let ports = custom_ports.as_deref().unwrap_or(EXTENDED_TARGET_PORTS);
+            let shared = shared_ports_for_thread;
             run_guarded(t0, &tracker_ports, 0, "Ports", move || {
-                PortScanner::scan(&t_ports, ports, Duration::from_millis(timeout_ms))
+                let res = PortScanner::scan(&t_ports, ports, Duration::from_millis(timeout_ms));
+                if let Ok(mut v) = shared.lock() {
+                    v.extend(res.iter().filter(|p| p.is_open).map(|p| p.port));
+                }
+                res
             })
         });
 
@@ -323,13 +334,40 @@ impl AuditOrchestrator {
             None
         };
 
+        // ffuf démarre après le scan de ports : il reçoit les ports réellement ouverts.
+        // Le lock est pris au spawn : le scan de ports ne prend que quelques secondes,
+        // et ffuf (90s de wordlist) est largement plus long — pas de deadlock possible.
         let handle_ffuf = if let Some(idx) = idx_ffuf {
             let tracker_c = Arc::clone(&tracker);
             let t = target.clone();
+            let shared = Arc::clone(&open_ports_shared);
+            // (le clone est fait avant le move du thread)
             Some(thread::spawn(move || {
+                // attendre que le scan de ports ait publié ses résultats (max 30 s).
+                // NB : ne JAMAIS garder le MutexGuard pendant le sleep — le scrutinee du
+                // match vit jusqu'à la fin de l'expression et affamerait le producteur
+                // (bug de starvation observé : le fill n'arrivait qu'à la fin du poll).
+                let mut ports_snapshot: Vec<u16> = Vec::new();
+                for _ in 0..150 {
+                    let snapshot = {
+                        match shared.lock() {
+                            Ok(v) if !v.is_empty() => Some(v.iter().copied().collect::<Vec<u16>>()),
+                            _ => None,
+                        }
+                    }; // guard droppé ICI, avant le sleep
+                    match snapshot {
+                        Some(p) => {
+                            ports_snapshot = p;
+                            break;
+                        }
+                        None => std::thread::sleep(Duration::from_millis(200)),
+                    }
+                }
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Fuzzing routes sensibles via SecLists quickhits...");
-                run_guarded(t0, &tracker_c, idx, "Ffuf", || FfufAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "Ffuf", || {
+                    FfufAuditor::audit(&t, &ports_snapshot)
+                })
             }))
         } else {
             None
@@ -476,6 +514,35 @@ impl AuditOrchestrator {
         let sslscan_result = handle_sslscan.map(|h| h.join().unwrap_or_default());
         let dnstwist_result = handle_dnstwist.map(|h| h.join().unwrap_or_default());
         let ffuf_result = handle_ffuf.map(|h| h.join().unwrap_or_default());
+
+        // Loot des fichiers sensibles trouvés par ffuf (opt-in via --loot)
+        let loot_result: Option<crate::modules::loot::LootResult> = if config.tools.loot {
+            let urls_to_loot: Vec<(String, String, String)> = ffuf_result
+                .as_ref()
+                .map(|r| {
+                    r.endpoints
+                        .iter()
+                        .filter(|e| {
+                            e.status == 200 && !LootCollector::should_skip_extension(&e.url)
+                        })
+                        .map(|e| (e.url.clone(), "CRITICAL".to_string(), "WEB".to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !urls_to_loot.is_empty() {
+                let loot_dir = "/var/lib/veridy/loot";
+                Some(LootCollector::loot_urls(
+                    0,
+                    urls_to_loot,
+                    &iso_timestamp(),
+                    loot_dir,
+                ))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
         let nuclei_result = handle_nuclei.map(|h| h.join().unwrap_or_default());
         let nikto_result = handle_nikto.map(|h| h.join().unwrap_or_default());
         let whois_result = handle_whois.map(|h| h.join().unwrap_or_default());
@@ -791,6 +858,7 @@ impl AuditOrchestrator {
             dns_hardening_result,
             vuln_result,
             nmap_result,
+            loot_result,
             nuclei_result,
             nikto_result,
             waf_result,
