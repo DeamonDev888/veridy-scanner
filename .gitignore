@@ -1,0 +1,27 @@
+# Rust
+/target
+**/*.rs.bk
+*.bin
+
+# Sauvegardes locales (refactoring)
+*.bak
+*.bak2
+*.bak3
+
+# Ops local — ne JAMAIS publier
+init_role.sql
+*.log
+*.sqlite
+*.db
+
+# Environnement
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
