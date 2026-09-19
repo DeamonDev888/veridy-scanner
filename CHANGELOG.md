@@ -8,6 +8,15 @@ Versions : [SemVer](https://semver.org/)
 ### Publié
 - **2026-09-19 : v0.1.0 publié sur crates.io** — https://crates.io/crates/veridy_scanner
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
+- **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
+
+## [0.2.0] — 2026-09-19 — BREAKING
+
+### Modifié
+- **Full scan par défaut** : sans profil ni flag outil, les 14 outils Kali standards sont activés automatiquement — l'audit est exhaustif d'office.  devient l'opt-out explicite (Core Rust uniquement)
+- **Outils Kali REQUIS** :  (14 outils vérifiés sur le PATH). Environnement incomplet → refus de démarrer (exit 1) avec instructions d'installation par outil — plus jamais de scan partiel silencieux
+-  installe désormais les outils Kali manquants (apt/dnf/pacman + go install) au lieu de simplement avertir
+- README (GitHub + crates.io) et matrice CLI alignés sur le comportement réel
 
 ## [0.1.1] — 2026-09-19
 

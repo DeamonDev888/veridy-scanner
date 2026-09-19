@@ -13,10 +13,14 @@ Conçu pour être exécuté aussi bien par un **opérateur humain** (TUI interac
 cargo install veridy_scanner
 ```
 
-Prérequis : Rust ≥ 1.75, `openssl`, `curl`, `dig` (dnsutils), `whois`. PostgreSQL 12+ et les outils Kali (nmap, nuclei, nikto…) sont optionnels — les modules correspondants se désactivent proprement s'ils sont absents.
+**Prérequis — outils Kali REQUIS.** L'audit est exhaustif par défaut : les 14 outils Kali standards sont activés automatiquement et le scanner **refuse de démarrer** si l'un d'eux est absent — pas de scan léger pour le moment (un audit partiel serait trompeur).
+
+- `apt install nmap nikto sslscan dnsrecon theharvester nuclei wafw00f whatweb dnstwist ffuf`
+- `go install github.com/projectdiscovery/httpx@latest` (idem `subfinder`, `RustScan`)
+- Rust ≥ 1.75, `openssl`, `curl`, `dig`, `whois` · PostgreSQL 12+ optionnel (`--no-db`)
 
 ```bash
-veridy_scanner tools   # diagnostic : outils détectés, wordlists, DB joignable
+veridy_scanner tools   # diagnostic : outils requis détectés, wordlists, DB
 ```
 
 ## Guide pour Agents IA & Automatisation CLI
@@ -71,7 +75,8 @@ veridy_scanner example.com -1 -j | jq '{spf: .email_sec.has_spf, dmarc: .email_s
 
 | Argument / Flag | Description | Temps moyen | Dépendances |
 |---|---|---|---|
-| `-1`, `--fast` | Scan natif pur Rust (Ports, TLS, DNS, GéoIP) | ~1.5 s | Zéro (Rust pur) |
+| *(aucun)* | **Full scan par défaut** — les 14 outils Kali + Core Rust | ~60-90 s | Suite Kali complète |
+| `-1`, `--fast` | Opt-out explicite : Core Rust uniquement (Ports, TLS, DNS, GéoIP) | ~1.5 s | Zéro (Rust pur) |
 | `-2`, `--web` | WAFW00F, WhatWeb, SSLScan, Dnstwist | ~7 s | Python / Ruby / C |
 | `-3`, `--full` | Audit complet 360° (15 modules Kali) | ~60-90 s | Suite Kali |
 | `-4`, `--infra` | Nmap (-sV -sC) + SSLScan | ~25 s | nmap, sslscan |

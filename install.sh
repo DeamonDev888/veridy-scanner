@@ -59,19 +59,49 @@ case "$PKG" in
 esac
 ok "Dépendances système installées"
 
-# ----- 2. Outils Kali recommandés (non bloquants) -----
-info "Vérification des outils Kali (nmap/nuclei/nikto/…) — étape optionnelle…"
-KALI_TOOLS=(nmap nuclei nikto wafw00f whatweb sslscan dnstwist ffuf dnsrecon theHarvester)
+# ----- 2. Outils Kali REQUIS (full scan par défaut) -----
+info "Installation des outils Kali REQUIS (full scan par défaut)…"
+KALI_TOOLS=(nmap nuclei nikto wafw00f whatweb sslscan dnstwist ffuf dnsrecon theharvester)
+GO_TOOLS=(httpx subfinder rustscan)
 MISSING=()
 for t in "${KALI_TOOLS[@]}"; do
     if ! command -v "$t" >/dev/null 2>&1; then MISSING+=("$t"); fi
 done
 if [ ${#MISSING[@]} -gt 0 ]; then
-    warn "Outils Kali absents : ${MISSING[*]}"
-    warn "Le scanner fonctionne en mode Core sans eux ; pour les profils -2/-3, installer depuis Kali :"
-    warn "  https://www.kali.org/tools/  (nmap, nuclei, nikto, etc.)"
+    warn "Outils absents : ${MISSING[*]} — installation via $PKG…"
+    case "$PKG" in
+        apt) $UPDATE; $INSTALL "${MISSING[@]}" || warn "Échec apt pour : ${MISSING[*]} — installer manuellement" ;;
+        dnf) $INSTALL "${MISSING[@]}" || warn "Échec dnf — installer manuellement" ;;
+        pacman) $INSTALL "${MISSING[@]}" || warn "Échec pacman — installer manuellement" ;;
+    esac
+fi
+# Outils Go (ProjectDiscovery + RustScan) : requis, installés si Go présent
+for t in "${GO_TOOLS[@]}"; do
+    if ! command -v "$t" >/dev/null 2>&1; then
+        if command -v go >/dev/null 2>&1; then
+            info "Installation $t (go install)…"
+            case "$t" in
+                httpx)    go install github.com/projectdiscovery/httpx/v2/cmd/httpx@latest ;;
+                subfinder) go install github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest ;;
+                rustscan) go install github.com/RustScan/RustScan@latest ;;
+            esac
+            [ -d "$HOME/go/bin" ] && ln -sf "$HOME/go/bin/$t" /usr/local/bin/$t 2>/dev/null
+        else
+            warn "$t absent et Go non installé — requis pour le full scan :"
+            warn "  go install github.com/projectdiscovery/$( [ $t = rustscan ] && echo RustScan/RustScan || echo $t )@latest"
+        fi
+    fi
+done
+# Vérification finale REQUISE
+FAIL=()
+for t in nmap nuclei nikto wafw00f whatweb sslscan dnstwist ffuf dnsrecon theharvester httpx subfinder rustscan; do
+    command -v "$t" >/dev/null 2>&1 || FAIL+=("$t")
+done
+if [ ${#FAIL[@]} -gt 0 ]; then
+    warn "OUTILS TOUJOURS ABSENTS : ${FAIL[*]}"
+    warn "Le scanner refusera le full scan tant qu'ils ne sont pas installés (voir README — Prérequis)."
 else
-    ok "Tous les outils Kali sont présents"
+    ok "Tous les outils Kali requis sont présents"
 fi
 
 # ----- 3. Rust toolchain -----
