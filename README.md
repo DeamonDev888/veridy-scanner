@@ -68,7 +68,7 @@ sudo apt update && sudo apt full-upgrade   # outils Kali natifs à jour
 veridy_scanner tools                       # diagnostic : présence + environnement
 ```
 
-Également requis : Rust ≥ 1.75, `openssl`, `curl`, `dig`, `whois`, **PostgreSQL 12+** (natifs ou installés sur Kali — `install.sh` installe et initialise PostgreSQL automatiquement).
+Également requis : Rust ≥ 1.84, `openssl`, `curl`, `dig`, `whois`, **PostgreSQL 12+** (natifs ou installés sur Kali — `install.sh` installe et initialise PostgreSQL automatiquement).
 
 > `--fast` (Core Rust uniquement) reste disponible en opt-out explicite.
 
@@ -173,6 +173,27 @@ Pour un utilisateur en direct sur le serveur Kali, `veridy` propose une console 
 
 ---
 
+## 🐍 Modules C2 / Post-exploitation (opt-in explicite)
+
+Wrappers **non-destructifs** pour les frameworks d'attaque — ils auditent l'état de l'outil (installation, serveur, version), jamais d'exploitation. NetExec sonde la cible en null-session lecture seule.
+
+| Flag | Outil | Ce que ça remonte |
+|---|---|---|
+| `--sliver` | Sliver (BishopSec) | version, serveur gRPC (:31337), implants configurés |
+| `--havoc` | Havoc | teamserver (:40056), version |
+| `--merlin` | Merlin | serveur HTTP/2 (:50051) |
+| `--poshc2` | PoshC2 | installation + service systemd |
+| `--empire` | Empire (BC-Security) | installation, **DB MariaDB prête ?**, serveur REST |
+| `--chisel` | Chisel | démo tunnelling locale (bind 127.0.0.1 éphémère, auto-fermé) |
+| `--netexec` | NetExec | **probe SMB null-session** : signing (finding MEDIUM si non forcé), OS |
+
+Jamais activés implicitement (`enable_all` les exclut) — opt-in par flag ou `-m sliver,netexec`.
+
+```bash
+veridy_scanner cible.com --sliver --netexec --json
+veridy_scanner cible.com -m empire,chisel --json
+```
+
 ## 🧪 Modules Core Rust Natifs
 
 | Module | Ce qu'il fait |
@@ -187,7 +208,7 @@ Pour un utilisateur en direct sur le serveur Kali, `veridy` propose une console 
 | `vuln_audit` | Libs obsolètes, SRI, mixed content, CORS, secrets exposés |
 | `geo` | Whois IP : ASN, org, pays, région |
 
-**Qualité** : 66 tests unitaires · clippy 0 warning · timeouts globaux sur tous les sous-processus · `catch_unwind` sur tous les threads · persistance PostgreSQL atomique · aucun `sh -c` (arguments directs, zéro injection shell).
+**Qualité** : 80 tests unitaires · clippy 0 warning · timeouts globaux sur tous les sous-processus · `catch_unwind` sur tous les threads · persistance PostgreSQL atomique · aucun `sh -c` (arguments directs, zéro injection shell).
 
 ---
 

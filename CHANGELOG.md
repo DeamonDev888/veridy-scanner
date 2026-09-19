@@ -10,6 +10,15 @@ Versions : [SemVer](https://semver.org/)
 - **2026-09-19 : v0.1.1 publié sur crates.io** — README enrichi (section Agents IA, matrice CLI, 15 modules)
 - **2026-09-19 : v0.2.0 publié sur crates.io** — full scan par défaut, outils Kali requis
 
+## [0.3.2] — 2026-09-19
+
+### Ajouté
+- **14 tests unitaires** pour les modules C2 (sérialisation, findings conditionnels, parsing signing/version, opt-in jamais implicite, helpers tool_on_path/tcp_probe) — total **80 tests**
+- README (GitHub + crates.io) : section « Modules C2 / Post-exploitation » avec tableau des 7 flags et exemples
+
+### Modifié
+- MSRV relevé à **Rust 1.84** (réel : `is_unicast_link_local` stabilisé en 1.84)
+
 ## [0.3.1] — 2026-09-19
 
 ### Corrigé

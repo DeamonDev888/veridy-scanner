@@ -1014,6 +1014,33 @@ impl FullAuditReport {
         }
     }
 
+    #[cfg(test)]
+    pub fn default_for_tests() -> Self {
+        Self {
+            target: "test.local".into(),
+            timestamp: "2026-01-01T00:00:00Z".into(),
+            duration_seconds: 0.0,
+            dns: Default::default(),
+            ports: Default::default(),
+            http: Default::default(),
+            tls: Default::default(),
+            subdomains: Default::default(),
+            geo: Default::default(),
+            email_sec: Default::default(),
+            web_endpoints: Default::default(),
+            dns_hardening: Default::default(),
+            vuln_audit: Default::default(),
+            nmap: None, nuclei: None, nikto: None, waf: None, tech_stack: None,
+            sslscan: None, brand_sec: None, ffuf: None, whois: None,
+            dnsrecon: None, theharvester: None, obscura: None,
+            http_probe: None, rustscan: None, sqli: None,
+            sliver: None, havoc: None, merlin: None, poshc2: None,
+            empire: None, chisel: None, netexec: None,
+            findings: vec![],
+            overall_score: 100,
+        }
+    }
+
     pub fn to_json(&self) -> String {
         serde_json::to_string_pretty(self).unwrap_or_else(|e| {
             format!(r#"{{"error": "serialization failed: {}"}}"#, e)

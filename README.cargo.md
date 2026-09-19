@@ -20,7 +20,7 @@ sudo apt update && sudo apt full-upgrade   # garder les outils natifs à jour
 veridy_scanner tools                       # diagnostic environnement
 ```
 
-Rust ≥ 1.75 requis.
+Rust ≥ 1.84 requis.
 
 ## Guide pour Agents IA & Automatisation CLI
 
@@ -115,6 +115,18 @@ veridy_scanner example.com -1 -j | jq '{spf: .email_sec.has_spf, dmarc: .email_s
 - **Vulnérabilités web** — libs obsolètes, SRI manquant, mixed content, secrets exposés (clés API dans le HTML)
 - **Géolocalisation** — ASN, organisation, pays, hébergeur
 
+## Modules C2 / Post-exploitation (opt-in explicite)
+
+Wrappers **non-destructifs** : état des frameworks d'attaque (installation, serveur, version) — jamais d'exploitation. NetExec probe la cible en SMB null-session (signing, OS).
+
+- `--sliver` (serveur gRPC, implants) · `--havoc` (teamserver) · `--merlin` (HTTP/2) · `--poshc2` (service) · `--empire` (DB + serveur) · `--chisel` (démo tunnelling locale) · `--netexec` (probe SMB, finding MEDIUM si signing non forcé)
+
+```bash
+veridy_scanner example.com --sliver --netexec --json
+```
+
+Jamais dans le full scan implicite : opt-in uniquement, comme `--sqli`.
+
 ## Persistance PostgreSQL (requise)
 
 12 tables relationnelles `audit_*` (scans, findings, ports, headers, certificats, sous-domaines, géo, email, endpoints…). PostgreSQL est installé et initialisé automatiquement par `install.sh`.
@@ -125,7 +137,7 @@ veridy_scanner history 10   # historique des audits catalogués
 
 ## Qualité d'implémentation
 
-- 66 tests unitaires, clippy zéro warning
+- 80 tests unitaires, clippy zéro warning
 - Timeout sur **tous** les sous-processus (helper `run_tool` : spawn/poll/kill) — jamais de scan gelé
 - Panics de modules capturées (`catch_unwind`) — une tâche qui échoue est marquée ÉCHEC, jamais re-exécutée sur la cible
 - Aucun `sh -c` : arguments passés directement, zéro injection shell

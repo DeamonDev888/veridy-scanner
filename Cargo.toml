@@ -1,10 +1,10 @@
 [package]
 name = "veridy_scanner"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.84"
 authors = ["Veridy <contact@veridy.ca>"]
-description = "Offensive surface scanner — DNS, ports, TLS, HTTP, subdomains + 22 Kali/C2 tool wrappers"
+description = "Offensive surface scanner — DNS, ports, TLS, HTTP, subdomains + 22 Kali/C2 tool wrappers (7 C2/post-exploitation)"
 license = "Apache-2.0"
 # license-file inutile : license = "Apache-2.0" suffit (LICENSE a la racine)
 readme = "README.cargo.md"
