@@ -5,24 +5,95 @@ vulnérabilités web, sous-domaines, OSINT — avec orchestration des outils Kal
 (nmap, nuclei, nikto, wafw00f, whatweb, sslscan, dnstwist, ffuf, whois, dnsrecon,
 theHarvester, subfinder, httpx) et catalogage PostgreSQL optionnel.
 
+## Installation
+
+Trois méthodes, du plus simple au plus contrôlable.
+
+### Méthode 1 — Cargo (depuis crates.io, une fois publié)
+
+```bash
+cargo install veridy_scanner
+veridy_scanner --version
+veridy_scanner example.com --no-db
+```
+
+> Le binaire s'installe dans `~/.cargo/bin/veridy_scanner`. Assure-toi que
+> `~/.cargo/bin` est dans ton `PATH` (Rustup le fait automatiquement).
+
+### Méthode 2 — Script d'installation (recommandé sur Kali/Debian)
+
+Télécharge et lance en root — il gère Rust, PostgreSQL, les outils Kali et la DB :
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DeamonDev888/veridy-scanner/main/install.sh -o /tmp/install.sh
+sudo bash /tmp/install.sh
+```
+
+Ce que fait le script :
+
+| Étape | Action |
+|---|---|
+| 1 | Détection distro (apt/dnf/pacman) + installation des dépendances système (build-essential, libssl-dev, postgresql, dnsutils, whois, curl, ca-certificates) |
+| 2 | Vérification des outils Kali (nmap, nuclei, nikto, wafw00f, whatweb, sslscan, dnstwist, ffuf, dnsrecon, theHarvester) — non bloquant, avertit si absents |
+| 3 | Installation de Rust via rustup si absent |
+| 4 | Clone du repo dans `/opt/veridy-scanner` (ou `VERIDY_INSTALL_DIR`) |
+| 5 | `cargo build --release` |
+| 6 | `install` du binaire dans `/usr/local/bin/veridy_scanner` + `launch.sh` → `veridy` |
+| 7 | Création et chargement du schéma PostgreSQL (12 tables) si Postgres joignable |
+| 8 | Diagnostic final via `veridy_scanner tools` |
+
+Variables d'environnement surchargeables :
+
+```bash
+VERIDY_INSTALL_DIR=/opt/custom VERIDY_BRANCH=main VERIDY_DB=ma_db \
+  sudo bash /tmp/install.sh
+```
+
+### Méthode 3 — Build depuis les sources (contrôle total)
+
+```bash
+git clone https://github.com/DeamonDev888/veridy-scanner.git
+cd veridy-scanner
+cargo build --release
+
+# Binaire : ./target/release/veridy_scanner
+# TUI     : ./launch.sh
+```
+
+Prérequis manuels : Rust ≥ 1.75, libssl-dev, OpenSSL ≥ 1.1, `psql` (PostgreSQL 12+
+si tu veux l'historique), et les outils Kali sur le PATH pour les profils -2 à -5.
+
+## Prérequis
+
+| Outil | Rôle | Optionnel ? |
+|---|---|---|
+| **Rust ≥ 1.75** (rustup) | compilation du scanner | non |
+| `libssl-dev` / `openssl-devel` | wrappers TLS (`openssl s_client`) | non |
+| `curl`, `dig` (dnsutils), `whois` | modules HTTP/DNS/geo | non |
+| `psql` + PostgreSQL 12+ | catalogage des scans (12 tables) | oui |
+| `nmap` | profil `-4` et `-5` (NSE scripts) | oui |
+| `nuclei`, `nikto`, `ffuf` | profil `-3`, `-5`, `-d` | oui |
+| `wafw00f`, `whatweb`, `sslscan`, `dnstwist` | profil `-2` | oui |
+| `dnsrecon`, `theHarvester` | OSINT | oui |
+| `subfinder`, `httpx` | sous-domaines avancés | oui |
+
+Diagnostic en local : `veridy_scanner tools` (mode CLI) ou `./launch.sh --check-tools` (TUI).
+
 ## Démarrage rapide
 
 ```bash
-# Prérequis : Rust (cargo), les outils Kali optionnels sur le PATH
-cargo build --release
-
 # Scan core (DNS, ports, TLS, HTTP, sous-domaines — 100% Rust + curl/dig/openssl)
-./target/release/veridy_scanner example.com
+veridy_scanner example.com
 
 # Sortie JSON (intégration pipeline)
-./target/release/veridy_scanner example.com --no-db --json
+veridy_scanner example.com --no-db --json
 
 # Profils
 veridy_scanner example.com -2        # web : WAF + WhatWeb + SSLScan + Dnstwist
 veridy_scanner example.com -4        # infra : Nmap + SSLScan
 veridy_scanner example.com -5        # vuln : Nuclei + Nikto + Nmap
 veridy_scanner example.com -3        # 360° : tous les outils
-veridy_scanner example.com -d        # découverte : Ffuf + Nikto + WAF
+veridy_scanner example.com -d        # discovery : Ffuf + Nikto + WAF
 
 # Historique PostgreSQL
 veridy_scanner history 10
