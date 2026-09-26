@@ -1,0 +1,14 @@
+[package]
+name = "veridy-impact"
+version = "0.2.0"
+edition = "2021"
+authors = ["Deamon <contact@veridy.ca>"]
+description = "14 modules lecture-seule de preuve d'impact pour les findings de veridy_scanner (env expose, git dump, cles API, spoofing, subs, FTP, chainage auto)"
+license = "Apache-2.0"
+repository = "https://github.com/DeamonDev888/veridy-scanner"
+homepage = "https://github.com/DeamonDev888/veridy-scanner"
+keywords = ["security", "recon", "scanner", "exploitation", "pentest"]
+categories = ["security", "command-line-utilities"]
+readme = "README.md"
+
+[dependencies]
