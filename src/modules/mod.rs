@@ -11,6 +11,7 @@ pub mod full_portscan;
 pub mod geo;
 pub mod http;
 pub mod http_probe;
+pub mod impact;
 pub mod loot;
 pub mod netdns;
 pub mod nethttp;

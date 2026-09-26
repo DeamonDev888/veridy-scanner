@@ -1,9 +1,9 @@
 [package]
 name = "veridy_scanner"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 authors = ["Deamon <contact@veridy.ca>"]
-description = "Scanner de surface d'audit modulaire (DNS, ports, TLS, HTTP, sous-domaines, fuzz) avec catalogue PostgreSQL"
+description = "Scanner offensif modulaire (DNS, ports, TLS, HTTP) + 14 modules lecture-seule de preuve d'impact (chainx dispatcher) + catalogue PostgreSQL"
 license = "Apache-2.0"
 repository = "https://github.com/DeamonDev888/veridy-scanner"
 homepage = "https://github.com/DeamonDev888/veridy-scanner"

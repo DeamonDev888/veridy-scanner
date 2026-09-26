@@ -559,11 +559,13 @@ fn test_ffuf_catch_all_capping_and_prioritization() {
     }
 
     // Ajoute un fichier critique au milieu
+    // URL vide = verification de contenu Impossible (offline, deterministe) :
+    // la nouvelle politique anti-faux-positif exige MEDIUM, jamais CRITICAL sans preuve
     endpoints.push(ExposedEndpoint {
         path: ".git/config".into(),
         status: 200,
         length: 240,
-        url: "https://example.com/.git/config".into(),
+        url: "".into(),
     });
 
     let res = FfufAuditResult {
@@ -587,12 +589,18 @@ fn test_ffuf_catch_all_capping_and_prioritization() {
     );
 
     // Le chemin critique .git/config doit obligatoirement être préservé en tête
-    let git_critical = findings
+    let git_kept = findings
         .iter()
-        .find(|f| f.category == "WEB" && f.severity == "CRITICAL" && f.title.contains(".git"));
+        .find(|f| f.category == "WEB" && f.title.contains(".git"));
     assert!(
-        git_critical.is_some(),
-        "Critical .git route must be prioritized even in a catch-all flood"
+        git_kept.is_some(),
+        ".git route must be prioritized even in a catch-all flood"
+    );
+    // Invariant anti-faux-positif verrouille : sans preuve de contenu (URL vide),
+    // un 2xx sensible est MEDIUM, JAMAIS CRITICAL (lecon metro.ca)
+    assert!(
+        git_kept.map(|f| f.severity) == Some("MEDIUM"),
+        "un 2xx sensible sans verification de contenu doit etre MEDIUM, pas CRITICAL"
     );
 
     // Maximum 21 constatations (20 tronquées + 1 synthèse)

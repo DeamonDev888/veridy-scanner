@@ -1,4 +1,5 @@
 use crate::modules::findings::SecurityFinding;
+use crate::modules::impact::{self, ProofLevel};
 use std::fs;
 use std::time::Instant;
 
@@ -326,6 +327,7 @@ impl FfufAuditor {
             endpoints.truncate(20);
         }
 
+        let mut verified_count: usize = 0;
         for ep in &endpoints {
             // CRITICAL exige DOUBLE preuve : path sensible ET status 2xx (contenu reellement servi)
             // Sans verification status, on declare a tort CRITICAL sur .git/.env bloques par Cloudflare (403)
@@ -348,14 +350,35 @@ impl FfufAuditor {
             let is_html_error_page =
                 is_really_accessible && is_sensitive_path && (4500..=7000).contains(&length);
 
+            // ANTI-FAUX-POSITIF v2 : CRITICAL exige maintenant la PREUVE DE CONTENU.
+            // On re-fetch l'URL (budget MAX_VERIFICATIONS_PER_SCAN) et on matche la
+            // signature attendue (.env -> KEY=VALUE, .git/config -> [core], ...).
+            // Un 200 sans contenu preuve = soft-404/WAF -> jamais CRITICAL (lecon metro.ca).
+            let proof = if verified_count < impact::MAX_VERIFICATIONS_PER_SCAN
+                && is_sensitive_path
+                && is_really_accessible
+            {
+                verified_count += 1;
+                impact::verify_endpoint(ep)
+            } else {
+                ProofLevel::Unknown
+            };
+
+            let rec_unverified = "Path sensible en 2xx mais contenu NON verifie (budget/timeout) - verifier manuellement: curl -i".to_string();
             let (severity, rec) = if is_sensitive_path
                 && is_really_accessible
-                && !is_html_error_page
+                && proof == ProofLevel::Confirmed
             {
-                ("CRITICAL", "Fichier sensible CONFIRME accessible (HTTP 2xx, taille coherente) - restreindre immediatement.")
+                ("CRITICAL", "Fichier sensible CONFIRME par verification de contenu (signature presente, non-HTML) - restreindre immediatement.")
+            } else if is_sensitive_path && is_really_accessible && proof == ProofLevel::Soft404 {
+                // 2xx mais contenu HTML/generique au re-fetch : soft-404 probable
+                ("MEDIUM", rec_html_error.as_str())
+            } else if is_sensitive_path && is_really_accessible {
+                // 2xx mais preuve Impossible (budget reseau epuise ou fetch rate) :
+                // JAMAIS CRITICAL sans confirmation de contenu (lecon metro.ca)
+                ("MEDIUM", rec_unverified.as_str())
             } else if is_html_error_page {
-                // Path sensible + 200 + longueur typique page HTML = probablement un piege WAF/serveur
-                // On degrade a MEDIUM car on ne peut pas CONFIRMER sans re-fetch
+                // Longueur suspecte + budget de verification epuise : verification manuelle
                 ("MEDIUM", rec_html_error.as_str())
             } else if is_sensitive_path {
                 (

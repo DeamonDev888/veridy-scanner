@@ -232,7 +232,23 @@ cargo clippy --all-targets -- -D warnings  # strict : 0 warning obligatoire
 
 ---
 
+## 🧩 Modules d'impact compagnons — `veridy-impact`
+
+> Ces modules **NE FONT PAS PARTIE** de `veridy_scanner` (qui reste pur découverte, lecture-seule). Ils sont livrés dans la crate sœur [`veridy-impact`](https://crates.io/crates/veridy-impact) et chaînés automatiquement par `chainx`.
+
+- **`chainx`** : dispatcher automatique — lit le catalogue DB, route chaque finding vers son bin d'exploitation en chaîne sûre (GET/DNS uniquement).
+- **`envx` / `gitdump`** : preuves de contenu pour les WEB CRITICAL (gates anti-faux-positif WAF).
+- **`keyprobe` / `gkeyx`** : classification + vérification des clés API (Google Maps non destructive, autres classifiées sans toucher).
+- **`spoofcheck`** : usurpabilité email (USURPABLE/PARTIEL/PROTEGE).
+- **`subalive` / `surfx` / `cnametake` / `cnamewatch`** : revivification + cartographie + surveillance de takeover des sous-domaines.
+- **`ftpx` / `ftplx`** : preuve FTP anonyme (jamais d'upload).
+- **`lootx`** : qualification des fichiers lootés (SENSIBLE / NEUTRE / SANS_VALEUR).
+- **`impacts`** : tableau de bord DB + re-vérification live des clés (`--live`).
+
+Installation : `cargo install --locked veridy-impact`. Tous les verdicts dans `audit_impact`.
+
 ## 📚 Voir aussi
+
 
 - **`CHANGELOG.md`** : historique des versions (v0.1 → v0.3)
 - **`AUDIT-RUST-2026-09-19.md`** : audit statique complet (81 findings corrigés)
