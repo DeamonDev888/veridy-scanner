@@ -1,8 +1,7 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NucleiItem {
     pub template_id: String,
     pub name: String,
@@ -11,8 +10,7 @@ pub struct NucleiItem {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct NucleiAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,

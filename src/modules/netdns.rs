@@ -55,9 +55,7 @@ fn read_name(buf: &[u8], mut pos: usize) -> (String, usize) {
         if pos + 1 + len > buf.len() {
             break;
         }
-        labels.push(
-            String::from_utf8_lossy(&buf[pos + 1..pos + 1 + len]).to_string(),
-        );
+        labels.push(String::from_utf8_lossy(&buf[pos + 1..pos + 1 + len]).to_string());
         if !jumped {
             total += 1 + len;
         }
@@ -154,8 +152,10 @@ fn parse_response(buf: &[u8]) -> Option<DnsAnswer> {
                 // CAA : flags tag value
                 if rdata.len() > 2 {
                     let taglen = rdata[1] as usize;
-                    let tag = String::from_utf8_lossy(&rdata[2..2 + taglen.min(rdata.len() - 2)]).to_string();
-                    let val = String::from_utf8_lossy(&rdata[2 + taglen.min(rdata.len() - 2)..]).to_string();
+                    let tag = String::from_utf8_lossy(&rdata[2..2 + taglen.min(rdata.len() - 2)])
+                        .to_string();
+                    let val = String::from_utf8_lossy(&rdata[2 + taglen.min(rdata.len() - 2)..])
+                        .to_string();
                     format!("{} {}", tag, val)
                 } else {
                     String::new()
@@ -175,8 +175,16 @@ fn parse_response(buf: &[u8]) -> Option<DnsAnswer> {
 pub fn query(qname: &str, qtype: &str, timeout: Duration) -> Option<DnsAnswer> {
     let server = system_resolver().unwrap_or_else(|| "8.8.8.8:53".to_string());
     let qt = match qtype.to_uppercase().as_str() {
-        "A" => 1, "NS" => 2, "CNAME" => 5, "SOA" => 6, "PTR" => 12,
-        "MX" => 15, "TXT" => 16, "AAAA" => 28, "DS" => 43, "CAA" => 257,
+        "A" => 1,
+        "NS" => 2,
+        "CNAME" => 5,
+        "SOA" => 6,
+        "PTR" => 12,
+        "MX" => 15,
+        "TXT" => 16,
+        "AAAA" => 28,
+        "DS" => 43,
+        "CAA" => 257,
         _ => return None,
     };
     let id = (std::process::id() as u16).wrapping_add(1);

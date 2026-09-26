@@ -2,9 +2,6 @@
 //! Détection de vulnérabilités SQL injection via SQLMap.
 //! Version recréée après suppression accidentelle.
 
-
-
-
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct SqliFinding {
     pub url: String,
@@ -29,17 +26,20 @@ impl SqliAuditor {
         let output = crate::utils::run_tool(
             "sqlmap",
             &[
-                "-u", url,
+                "-u",
+                url,
                 "--batch",
                 "--level=2",
                 "--risk=2",
                 "--threads=1",
-                "--timeout", &timeout_secs.to_string(),
+                "--timeout",
+                &timeout_secs.to_string(),
                 "--retries=1",
                 "--technique=BEUSTQ",
                 "--flush-session",
                 "--silent",
-                "-v", "0",
+                "-v",
+                "0",
             ],
             300,
         )
@@ -63,7 +63,11 @@ impl SqliAuditor {
                 }
                 let parts: Vec<&str> = l.split_whitespace().collect();
                 let parameter = parts.get(1).unwrap_or(&"?").to_string();
-                let method = parts.last().unwrap_or(&"?").trim_matches(|c| c == '(' || c == ')').to_string();
+                let method = parts
+                    .last()
+                    .unwrap_or(&"?")
+                    .trim_matches(|c| c == '(' || c == ')')
+                    .to_string();
                 current = Some(SqliFinding {
                     url: url.to_string(),
                     parameter,

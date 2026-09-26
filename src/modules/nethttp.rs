@@ -138,7 +138,15 @@ mod tests {
     fn head_parse_status_and_headers() {
         // parse sans réseau : on teste la logique via une chaîne brute simulée
         let raw = "HTTP/1.1 301 Moved\r\nLocation: https://x/\r\nServer: nginx\r\n";
-        let status: u16 = raw.lines().next().unwrap().split_whitespace().nth(1).unwrap().parse().unwrap();
+        let status: u16 = raw
+            .lines()
+            .next()
+            .unwrap()
+            .split_whitespace()
+            .nth(1)
+            .unwrap()
+            .parse()
+            .unwrap();
         assert_eq!(status, 301);
         let mut h = std::collections::HashMap::new();
         for line in raw.lines().skip(1) {

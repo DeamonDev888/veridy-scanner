@@ -1,7 +1,5 @@
-
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct EmailSecurityResult {
     pub domain: String,
     pub spf_lookup_count: usize,
@@ -117,8 +115,7 @@ impl EmailSecAuditor {
                 // récupère aussi pour détecter les déploiements cassés
                 // (TXT présent mais endpoint mort → mode=None → finding MEDIUM).
                 if res.mta_sts_mode.is_none() {
-                    let policy_url =
-                        format!("https://mta-sts.{}/.well-known/mta-sts.txt", domain);
+                    let policy_url = format!("https://mta-sts.{}/.well-known/mta-sts.txt", domain);
                     if let Some(out) =
                         crate::utils::run_tool("curl", &["-s", "--max-time", "5", &policy_url], 10)
                     {

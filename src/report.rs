@@ -1,14 +1,13 @@
 use crate::modules::brand_sec::BrandSecResult;
-use serde::Serialize;
 use crate::modules::dns::DnsAuditResult;
 use crate::modules::dns_hardening::DnsHardeningResult;
 use crate::modules::dnsrecon_audit::DnsreconResult;
 use crate::modules::email_sec::EmailSecurityResult;
 use crate::modules::ffuf_audit::FfufAuditResult;
 use crate::modules::findings::SecurityFinding;
-use crate::modules::loot::LootResult;
 use crate::modules::geo::GeoComplianceResult;
 use crate::modules::http::HttpAuditResult;
+use crate::modules::loot::LootResult;
 use crate::modules::nikto_deep::NiktoAuditResult;
 use crate::modules::nmap_deep::NmapAuditResult;
 use crate::modules::nuclei_deep::NucleiAuditResult;
@@ -23,6 +22,7 @@ use crate::modules::vuln_audit::VulnAuditResult;
 use crate::modules::waf::WafResult;
 use crate::modules::web_endpoints::WebEndpointsResult;
 use crate::modules::whois_audit::WhoisResult;
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct FullAuditReport {
@@ -57,7 +57,7 @@ pub struct FullAuditReport {
     pub loot: Option<LootResult>,
     pub box_probe: Option<crate::modules::box_prober::BoxProbeResult>,
     pub smb_audit: Option<crate::modules::smb_audit::SmbAuditResult>,
-                pub findings: Vec<SecurityFinding>,
+    pub findings: Vec<SecurityFinding>,
     pub overall_score: u8,
 }
 
@@ -155,9 +155,7 @@ impl FullAuditReport {
         println!(
             "================================================================================"
         );
-        println!(
-            "        VERIDY CYBERSCAN 360° — AUDIT DE SURFACE APPROFONDI "
-        );
+        println!("        VERIDY CYBERSCAN 360° — AUDIT DE SURFACE APPROFONDI ");
         println!(
             "================================================================================"
         );
@@ -881,7 +879,6 @@ impl FullAuditReport {
             }
             println!();
         }
-
     }
 
     /// [20] Constatations & recommandations d'audit
@@ -915,8 +912,7 @@ impl FullAuditReport {
 
     /// Sérialisation JSON exhaustive du rapport complet (serde_json).
     pub fn to_json(&self) -> String {
-        serde_json::to_string_pretty(self).unwrap_or_else(|e| {
-            format!(r#"{{"error": "serialization failed: {}"}}"#, e)
-        })
+        serde_json::to_string_pretty(self)
+            .unwrap_or_else(|e| format!(r#"{{"error": "serialization failed: {}"}}"#, e))
     }
 }

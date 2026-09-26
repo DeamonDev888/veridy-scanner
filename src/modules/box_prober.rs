@@ -118,11 +118,7 @@ impl BoxProber {
         for port in web_ports {
             for scheme in ["http", "https"] {
                 let url = format!("{}://{}:{}/", scheme, target, port);
-                let out = crate::utils::run_tool(
-                    "curl",
-                    &["-s", "-k", "--max-time", "5", &url],
-                    8,
-                );
+                let out = crate::utils::run_tool("curl", &["-s", "-k", "--max-time", "5", &url], 8);
                 if let Some(o) = out {
                     let body = String::from_utf8_lossy(&o.stdout).to_string();
                     let lower = body.to_lowercase();
@@ -134,7 +130,8 @@ impl BoxProber {
                             .unwrap_or("")
                             .trim()
                             .to_string();
-                        res.probed_services.push(format!("http-title:{}:{} = \"{}\"", scheme, port, title));
+                        res.probed_services
+                            .push(format!("http-title:{}:{} = \"{}\"", scheme, port, title));
                         res.findings.push(SecurityFinding {
                             severity: "INFO",
                             category: "BOX",
@@ -143,7 +140,12 @@ impl BoxProber {
                         });
                         break; // un schéma suffit pour ce port
                     } else if !body.trim().is_empty() {
-                        res.probed_services.push(format!("http-body:{}:{} ({}o)", scheme, port, body.len()));
+                        res.probed_services.push(format!(
+                            "http-body:{}:{} ({}o)",
+                            scheme,
+                            port,
+                            body.len()
+                        ));
                         break;
                     }
                 }
@@ -239,7 +241,11 @@ fn extract_version(banner: &str, product: &str) -> Option<String> {
         .chars()
         .take_while(|c| c.is_ascii_digit() || *c == '.')
         .collect();
-    if version.is_empty() { None } else { Some(version) }
+    if version.is_empty() {
+        None
+    } else {
+        Some(version)
+    }
 }
 
 use std::net::ToSocketAddrs;

@@ -27,10 +27,14 @@ impl RustScanWrapper {
         let output = crate::utils::run_tool(
             "rustscan",
             &[
-                "-a", target,
-                "--ulimit", "5000",
-                "-t", &timeout_secs.to_string(),
-                "-g", "--no-banner",
+                "-a",
+                target,
+                "--ulimit",
+                "5000",
+                "-t",
+                &timeout_secs.to_string(),
+                "-g",
+                "--no-banner",
             ],
             180,
         )

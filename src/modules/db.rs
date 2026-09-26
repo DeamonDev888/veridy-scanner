@@ -6,8 +6,7 @@ use std::time::Duration;
 pub struct DatabaseManager;
 
 #[allow(dead_code)]
-#[derive(Debug, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct ScanHistoryEntry {
     pub id: i64,
     pub target: String,
@@ -38,7 +37,9 @@ impl DatabaseManager {
                 Err(e) => last_err = format!("socket {dir} : {e}"),
             }
         }
-        Err(format!("PostgreSQL injoignable via socket locale ({last_err})"))
+        Err(format!(
+            "PostgreSQL injoignable via socket locale ({last_err})"
+        ))
     }
 
     /// Insère l'ensemble du scan et catalogue tous les artefacts dans les

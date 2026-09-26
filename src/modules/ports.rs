@@ -20,8 +20,7 @@ pub const EXTENDED_TARGET_PORTS: &[u16] = &[
 ];
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PortScanResult {
     pub port: u16,
     pub is_open: bool,
@@ -167,8 +166,7 @@ fn probe_port(target: &str, port: u16, timeout: Duration) -> Option<PortScanResu
                 }
 
                 // Si rien reçu et port Web, probe HEAD
-                if banner.is_none()
-                    && (port == 80 || port == 8080 || port == 8000 || port == 8888)
+                if banner.is_none() && (port == 80 || port == 8080 || port == 8000 || port == 8888)
                 {
                     let probe = format!("HEAD / HTTP/1.0\r\nHost: {}\r\n\r\n", target);
                     if stream.write_all(probe.as_bytes()).is_ok() {

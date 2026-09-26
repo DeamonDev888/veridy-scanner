@@ -1,8 +1,7 @@
 use regex::Regex;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct VulnFinding {
     pub id: String,
     pub severity: &'static str, // CRITICAL, HIGH, MEDIUM, LOW, INFO
@@ -14,8 +13,7 @@ pub struct VulnFinding {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct VulnAuditResult {
     pub html_retrieved: bool,
     pub cdn_scripts_count: usize,
@@ -47,11 +45,8 @@ impl VulnAuditor {
         let mut html_content = String::new();
         if let Some(content) = ["https", "http"].iter().find_map(|scheme| {
             let target_url = format!("{}://{}/", scheme, hostport);
-            let output = crate::utils::run_tool(
-                "curl",
-                &["-s", "-L", "--max-time", "5", &target_url],
-                600,
-            )?;
+            let output =
+                crate::utils::run_tool("curl", &["-s", "-L", "--max-time", "5", &target_url], 600)?;
             if !output.status.success() {
                 return None;
             }
@@ -91,15 +86,15 @@ impl VulnAuditor {
 
         // Détection jQuery : ancrée aux attributs src/href d'une URL (évite les faux
         // positifs sur du texte/commentaires) + version complète majeur.mineur[.patch]
-        let jq_re = Regex::new(
-            r#"(?:src|href)\s*=\s*["'][^"']*jquery[/-]?(\d+)\.(\d+)(?:\.(\d+))?["']"#,
-        )
-        .unwrap();
+        let jq_re =
+            Regex::new(r#"(?:src|href)\s*=\s*["'][^"']*jquery[/-]?(\d+)\.(\d+)(?:\.(\d+))?["']"#)
+                .unwrap();
         if let Some(caps) = jq_re.captures(&lower) {
             let major: u32 = caps[1].parse().unwrap_or(u32::MAX);
             let minor: u32 = caps[2].parse().unwrap_or(u32::MAX);
             if (major, minor) < (3, 5) {
-                res.detected_libraries.push(format!("jQuery {}.{} < 3.5.0", major, minor));
+                res.detected_libraries
+                    .push(format!("jQuery {}.{} < 3.5.0", major, minor));
                 res.findings.push(VulnFinding {
                     id: "cve-jquery-xss".into(),
                     severity: "HIGH",
@@ -110,7 +105,8 @@ impl VulnAuditor {
                     owasp: "A06:2021 - Vulnerable and Outdated Components",
                 });
             } else {
-                res.detected_libraries.push(format!("jQuery {}.{}", major, minor));
+                res.detected_libraries
+                    .push(format!("jQuery {}.{}", major, minor));
             }
         }
 
@@ -142,8 +138,9 @@ impl VulnAuditor {
         // Regex stricte : <script src="https://cdn..."> ou <link href="https://cdn...">
         // Capture le tag complet pour vérifier la présence d'integrity= dans le même tag.
         let tag_re = Regex::new(
-            r#"<(?:script|link)\b[^>]*?\s(?:src|href)\s*=\s*["'](https?://[^"']+)["'][^>]*>"#
-        ).unwrap();
+            r#"<(?:script|link)\b[^>]*?\s(?:src|href)\s*=\s*["'](https?://[^"']+)["'][^>]*>"#,
+        )
+        .unwrap();
 
         for cap in tag_re.captures_iter(html) {
             let url = cap[1].to_lowercase();
@@ -175,8 +172,10 @@ impl VulnAuditor {
     fn check_mixed_content(html: &str, res: &mut VulnAuditResult) {
         // Mixed content : occurrences réelles (pas des lignes), guillemets simples inclus
         let src_http_re = Regex::new(r#"src\s*=\s*["']http://[^"']+"#).unwrap();
-        let css_http_re = Regex::new(r#"href\s*=\s*["']http://[^"']*\.(?:css|js|mjs)["']"#).unwrap();
-        res.mixed_content_count = src_http_re.find_iter(html).count() + css_http_re.find_iter(html).count();
+        let css_http_re =
+            Regex::new(r#"href\s*=\s*["']http://[^"']*\.(?:css|js|mjs)["']"#).unwrap();
+        res.mixed_content_count =
+            src_http_re.find_iter(html).count() + css_http_re.find_iter(html).count();
 
         if res.mixed_content_count > 0 {
             res.findings.push(VulnFinding {
@@ -213,12 +212,32 @@ impl VulnAuditor {
 
         // Divulgation de secrets / clés API dans le code source public (touche pro)
         let secret_patterns: &[(&str, &str, &str)] = &[
-            (r"AIza[0-9A-Za-z_\-]{35}", "Clé API Google exposée dans la page", "HIGH"),
-            (r"sk_live_[0-9a-zA-Z]{20,}", "Clé secrète Stripe (mode LIVE) exposée", "CRITICAL"),
-            (r"gh[pousr]_[0-9A-Za-z]{20,}", "Token GitHub (PAT) exposé", "HIGH"),
+            (
+                r"AIza[0-9A-Za-z_\-]{35}",
+                "Clé API Google exposée dans la page",
+                "HIGH",
+            ),
+            (
+                r"sk_live_[0-9a-zA-Z]{20,}",
+                "Clé secrète Stripe (mode LIVE) exposée",
+                "CRITICAL",
+            ),
+            (
+                r"gh[pousr]_[0-9A-Za-z]{20,}",
+                "Token GitHub (PAT) exposé",
+                "HIGH",
+            ),
             (r"AKIA[0-9A-Z]{16}", "Access Key ID AWS exposée", "HIGH"),
-            (r"xox[baprs]-[0-9A-Za-z\-]{10,}", "Token Slack exposé", "HIGH"),
-            (r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", "Clé privée embarquée dans la page", "CRITICAL"),
+            (
+                r"xox[baprs]-[0-9A-Za-z\-]{10,}",
+                "Token Slack exposé",
+                "HIGH",
+            ),
+            (
+                r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+                "Clé privée embarquée dans la page",
+                "CRITICAL",
+            ),
         ];
         for (pat, title, sev) in secret_patterns {
             if let Ok(re) = Regex::new(pat) {
@@ -269,8 +288,7 @@ impl VulnAuditor {
             for line in s.lines() {
                 let lower = line.to_lowercase();
                 if lower.starts_with("access-control-allow-origin:") {
-                    allow_origin =
-                        Some(
+                    allow_origin = Some(
                         line.split_once(':')
                             .map(|x| x.1)
                             .unwrap_or("")

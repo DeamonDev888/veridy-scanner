@@ -3,8 +3,7 @@ use crate::utils::extract_json_str;
 use std::fs;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ObscuraResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -82,7 +81,8 @@ impl ObscuraAuditor {
                     success: false,
                     elapsed_seconds: start.elapsed().as_secs_f32(),
                     page_title: "Non disponible".into(),
-                    summary: "Impossible d'exécuter obscura : timeout ou binaire introuvable".into(),
+                    summary: "Impossible d'exécuter obscura : timeout ou binaire introuvable"
+                        .into(),
                     raw_output: "obscura : timeout (30s) ou binaire introuvable".into(),
                     ..Default::default()
                 };

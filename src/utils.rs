@@ -123,7 +123,13 @@ pub fn host_with_port(target: &str, custom_ports: &[u16]) -> String {
 pub fn sanitize_target(s: &str) -> String {
     let cleaned: String = s
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     if cleaned.is_empty() {
         "target".to_string()

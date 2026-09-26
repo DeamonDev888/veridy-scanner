@@ -2,8 +2,7 @@ use crate::modules::findings::SecurityFinding;
 use std::fs;
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ExposedEndpoint {
     pub path: String,
     pub status: u16,
@@ -11,8 +10,7 @@ pub struct ExposedEndpoint {
     pub url: String,
 }
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FfufAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -138,9 +136,11 @@ impl FfufAuditor {
                 success: false,
                 elapsed_seconds: elapsed,
                 endpoints: Vec::new(),
-                raw_output: "ffuf : timeout (120s), binaire introuvable ou schéma http/https inaccessible"
+                raw_output:
+                    "ffuf : timeout (120s), binaire introuvable ou schéma http/https inaccessible"
+                        .into(),
+                summary: "Ffuf interrompu : deadline dépassée ou cible HTTP/HTTPS injoignable"
                     .into(),
-                summary: "Ffuf interrompu : deadline dépassée ou cible HTTP/HTTPS injoignable".into(),
             };
         }
 
@@ -178,9 +178,7 @@ impl FfufAuditor {
             ],
             6,
         )
-        .is_some_and(|o| {
-            o.status.success() && String::from_utf8_lossy(&o.stdout).trim() != "000"
-        })
+        .is_some_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() != "000")
     }
 
     /// Sonde 2 chemins aléatoires inexistants pour établir la signature de la
@@ -198,7 +196,17 @@ impl FfufAuditor {
             let url = format!("{}://{}/{}", probe_scheme, hostport, probes[0]);
             let out = crate::utils::run_tool(
                 "curl",
-                &["-s", "-k", "-o", "/dev/null", "--max-time", "6", "-w", "%{http_code}", &url],
+                &[
+                    "-s",
+                    "-k",
+                    "-o",
+                    "/dev/null",
+                    "--max-time",
+                    "6",
+                    "-w",
+                    "%{http_code}",
+                    &url,
+                ],
                 8,
             )?;
             if String::from_utf8_lossy(&out.stdout).trim() == "000" {
@@ -265,7 +273,9 @@ impl FfufAuditor {
                 .unwrap_or_default()
                 .to_string();
             // status_code (snake_case dans le JSON ffuf, pas status)
-            let status = r.get("status_code").and_then(|s| s.as_u64())
+            let status = r
+                .get("status_code")
+                .and_then(|s| s.as_u64())
                 .or_else(|| r.get("status").and_then(|s| s.as_u64()))
                 .unwrap_or(0) as u16;
             let length = r.get("length").and_then(|l| l.as_u64()).unwrap_or(0) as usize;
@@ -294,9 +304,18 @@ impl FfufAuditor {
             // Trier par criticité : chemins hautement sensibles en premier
             endpoints.sort_by_key(|ep| {
                 let p = ep.path.to_lowercase();
-                if p.starts_with(".git") || p.starts_with(".env") || p.contains("backup") || p.contains("config") || p.ends_with(".sql") {
+                if p.starts_with(".git")
+                    || p.starts_with(".env")
+                    || p.contains("backup")
+                    || p.contains("config")
+                    || p.ends_with(".sql")
+                {
                     0
-                } else if p.contains("admin") || p.contains("api") || p.contains("dashboard") || p.contains("login") {
+                } else if p.contains("admin")
+                    || p.contains("api")
+                    || p.contains("dashboard")
+                    || p.contains("login")
+                {
                     1
                 } else if ep.status == 200 {
                     2
@@ -326,18 +345,23 @@ impl FfufAuditor {
             // page d'erreur HTML (4500-7000 bytes = Cloudflare "Access Denied" 5481 bytes, etc.),
             // c'est un piege : le serveur renvoie une page HTML meme pour /git/HEAD au lieu du contenu reel.
             // Sans re-fetch du contenu (coûteux), on degrade CRITICAL -> MEDIUM avec demande de verification manuelle.
-            let is_html_error_page = is_really_accessible
-                && is_sensitive_path
-                && (4500..=7000).contains(&length);
+            let is_html_error_page =
+                is_really_accessible && is_sensitive_path && (4500..=7000).contains(&length);
 
-            let (severity, rec) = if is_sensitive_path && is_really_accessible && !is_html_error_page {
+            let (severity, rec) = if is_sensitive_path
+                && is_really_accessible
+                && !is_html_error_page
+            {
                 ("CRITICAL", "Fichier sensible CONFIRME accessible (HTTP 2xx, taille coherente) - restreindre immediatement.")
             } else if is_html_error_page {
                 // Path sensible + 200 + longueur typique page HTML = probablement un piege WAF/serveur
                 // On degrade a MEDIUM car on ne peut pas CONFIRMER sans re-fetch
                 ("MEDIUM", rec_html_error.as_str())
             } else if is_sensitive_path {
-                ("INFO", "Path sensible detecte mais bloque par WAF/auth - serveur protege.")
+                (
+                    "INFO",
+                    "Path sensible detecte mais bloque par WAF/auth - serveur protege.",
+                )
             } else if ep.status == 200 {
                 ("LOW", "Verifier que ce chemin public ne divulgue aucune donnee interne confidentielle.")
             } else {

@@ -12,20 +12,20 @@ use crate::modules::ffuf_audit::FfufAuditor;
 use crate::modules::findings::{FindingsEngine, SecurityFinding};
 use crate::modules::geo::GeoAuditor;
 use crate::modules::http::HttpAuditor;
+use crate::modules::http_probe::probe_parallel;
+use crate::modules::loot::LootCollector;
 use crate::modules::nikto_deep::NiktoAuditor;
 use crate::modules::nmap_deep::NmapAuditor;
 use crate::modules::nuclei_deep::NucleiAuditor;
 use crate::modules::obscura_audit::ObscuraAuditor;
 use crate::modules::ports::{PortScanner, EXTENDED_TARGET_PORTS};
+use crate::modules::portscan_rustscan::RustScanWrapper;
 use crate::modules::progress::ProgressTracker;
+use crate::modules::sqli_audit::scan_urls_parallel;
 use crate::modules::sslscan_audit::SslscanAuditor;
 use crate::modules::subdomains::SubdomainScanner;
 use crate::modules::tech_stack::TechStackAuditor;
 use crate::modules::theharvester_audit::TheHarvesterAuditor;
-use crate::modules::loot::LootCollector;
-use crate::modules::portscan_rustscan::RustScanWrapper;
-use crate::modules::http_probe::probe_parallel;
-use crate::modules::sqli_audit::scan_urls_parallel;
 use crate::modules::tls::TlsAuditor;
 use crate::modules::vuln_audit::VulnAuditor;
 use crate::modules::waf::WafAuditor;
@@ -206,7 +206,8 @@ impl AuditOrchestrator {
             let ip_web = ip_web.clone();
             thread::spawn(move || {
                 let t0 = Instant::now();
-                tracker_web.set_running(5, "Détection des fichiers sensibles (.env, /admin, git)...");
+                tracker_web
+                    .set_running(5, "Détection des fichiers sensibles (.env, /admin, git)...");
                 run_guarded(t0, &tracker_web, 5, "Endpoints", move || {
                     WebEndpointsAuditor::audit(&t_web, &ip_web)
                 })
@@ -265,7 +266,9 @@ impl AuditOrchestrator {
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Empreinte CMS, librairies JS & adresses emails...");
-                run_guarded(t0, &tracker_c, idx, "WhatWeb", || TechStackAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "WhatWeb", || {
+                    TechStackAuditor::audit(&t)
+                })
             }))
         } else {
             None
@@ -289,7 +292,9 @@ impl AuditOrchestrator {
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Génération variantes typosquatting & phishing...");
-                run_guarded(t0, &tracker_c, idx, "Dnstwist", || BrandSecAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "Dnstwist", || {
+                    BrandSecAuditor::audit(&t)
+                })
             }))
         } else {
             None
@@ -352,7 +357,9 @@ impl AuditOrchestrator {
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Énumération DNS SRV, zone AXFR & Bind version...");
-                run_guarded(t0, &tracker_c, idx, "Dnsrecon", || DnsreconAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "Dnsrecon", || {
+                    DnsreconAuditor::audit(&t)
+                })
             }))
         } else {
             None
@@ -364,7 +371,9 @@ impl AuditOrchestrator {
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Recherche OSINT emails d'employés & hôtes...");
-                run_guarded(t0, &tracker_c, idx, "theHarvester", || TheHarvesterAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "theHarvester", || {
+                    TheHarvesterAuditor::audit(&t)
+                })
             }))
         } else {
             None
@@ -423,7 +432,6 @@ impl AuditOrchestrator {
             None
         };
 
-
         let rustscan_result = handle_rustscan.map(|h| h.join().unwrap_or_default());
         // 4. Récupération des résultats Core
         let port_results = handle_ports.join().unwrap_or_default();
@@ -441,19 +449,13 @@ impl AuditOrchestrator {
         let email_sec_result = if target.parse::<std::net::IpAddr>().is_ok() {
             EmailSecAuditor::audit_skipped_for_ip(target)
         } else {
-            run_guarded(
-                Instant::now(),
-                &tracker,
-                usize::MAX,
-                "Messagerie",
-                || {
-                    EmailSecAuditor::audit(
-                        target,
-                        dns_result.spf_record.as_deref(),
-                        dns_result.dmarc_record.as_deref(),
-                    )
-                },
-            )
+            run_guarded(Instant::now(), &tracker, usize::MAX, "Messagerie", || {
+                EmailSecAuditor::audit(
+                    target,
+                    dns_result.spf_record.as_deref(),
+                    dns_result.dmarc_record.as_deref(),
+                )
+            })
         };
 
         // 5. Exécution conditionnelle de Nmap sur les ports découverts
@@ -501,14 +503,21 @@ impl AuditOrchestrator {
                 .map(|r| {
                     r.endpoints
                         .iter()
-                        .filter(|e| e.status == 200 && !LootCollector::should_skip_extension(&e.url))
+                        .filter(|e| {
+                            e.status == 200 && !LootCollector::should_skip_extension(&e.url)
+                        })
                         .map(|e| (e.url.clone(), "CRITICAL".to_string(), "WEB".to_string()))
                         .collect()
                 })
                 .unwrap_or_default();
             if !urls_to_loot.is_empty() {
                 let loot_dir = "/var/lib/veridy/loot";
-                Some(LootCollector::loot_urls(0, urls_to_loot, &iso_timestamp(), loot_dir))
+                Some(LootCollector::loot_urls(
+                    0,
+                    urls_to_loot,
+                    &iso_timestamp(),
+                    loot_dir,
+                ))
             } else {
                 None
             }
@@ -523,16 +532,13 @@ impl AuditOrchestrator {
         let theharvester_result = handle_theharvester.map(|h| h.join().unwrap_or_default());
         let obscura_result = handle_obscura.map(|h| h.join().unwrap_or_default());
 
-
         // Httpx : probe séquentiel APRÈS subdomains — prober racine + tous les
         // sous-domaines découverts par subfinder (c'est là toute la valeur)
         let httpx_result = if config.tools.httpx {
             if let Some(idx) = idx_httpx {
                 let t0 = Instant::now();
-                let mut targets: Vec<String> = vec![
-                    format!("https://{}", target),
-                    format!("http://{}", target),
-                ];
+                let mut targets: Vec<String> =
+                    vec![format!("https://{}", target), format!("http://{}", target)];
                 for sub in &subdomains_result {
                     targets.push(format!("https://{}", sub.subdomain));
                     targets.push(format!("http://{}", sub.subdomain));
@@ -541,9 +547,7 @@ impl AuditOrchestrator {
                     idx,
                     &format!("Probe httpx sur {} cible(s)...", targets.len()),
                 );
-                let res = run_guarded(t0, &tracker, idx, "Httpx", || {
-                    probe_parallel(targets, 40)
-                });
+                let res = run_guarded(t0, &tracker, idx, "Httpx", || probe_parallel(targets, 40));
                 Some(res)
             } else {
                 None
@@ -557,13 +561,9 @@ impl AuditOrchestrator {
             if let Some(idx) = idx_sqlmap {
                 let t0 = Instant::now();
                 tracker.set_running(idx, "Injection SQL : analyse des endpoints paramétrés...");
-                let urls: Vec<String> = vec![
-                    format!("https://{}", target),
-                    format!("http://{}", target),
-                ];
-                let res = run_guarded(t0, &tracker, idx, "SQLMap", || {
-                    scan_urls_parallel(urls, 60)
-                });
+                let urls: Vec<String> =
+                    vec![format!("https://{}", target), format!("http://{}", target)];
+                let res = run_guarded(t0, &tracker, idx, "SQLMap", || scan_urls_parallel(urls, 60));
                 Some(res)
             } else {
                 None
@@ -603,7 +603,8 @@ impl AuditOrchestrator {
                 None
             } else {
                 Some(crate::modules::box_prober::BoxProber::audit(
-                    target, &open_ports,
+                    target,
+                    &open_ports,
                 ))
             }
         } else {
@@ -741,7 +742,9 @@ impl AuditOrchestrator {
                     severity: "INFO",
                     category: "SMB",
                     title: f.clone(),
-                    recommendation: "Voir le module SMB pour le detail utilisateur / SAMR / partage.".to_string(),
+                    recommendation:
+                        "Voir le module SMB pour le detail utilisateur / SAMR / partage."
+                            .to_string(),
                 });
             }
         }
@@ -801,7 +804,7 @@ pub(crate) fn run_guarded<T: Default, F: FnOnce() -> T>(
         Ok(v) => {
             tracker.set_done(idx, t0.elapsed());
 
-    // v0.3+ : Loot des fichiers sensibles (--loot opt-in). Sera peuple par ffuf ci-dessous.
+            // v0.3+ : Loot des fichiers sensibles (--loot opt-in). Sera peuple par ffuf ci-dessous.
             v
         }
         Err(e) => {

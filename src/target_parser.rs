@@ -31,15 +31,13 @@ impl TargetParser {
 
         // Hostname : alphanum + . - _, chaque label 1..=63, séparés par .
         // IP brute acceptée en input direct (on parse plus bas).
-        let host_re_ok = trimmed
-            .split('.')
-            .all(|label| {
-                !label.is_empty()
-                    && label.len() <= 63
-                    && label
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-            });
+        let host_re_ok = trimmed.split('.').all(|label| {
+            !label.is_empty()
+                && label.len() <= 63
+                && label
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        });
 
         // Si ça parse comme IP, on accepte directement sans passer par le host regex
         let is_ip = trimmed.parse::<IpAddr>().is_ok();
@@ -67,7 +65,10 @@ impl TargetParser {
                     }
                 }
                 if ips.is_empty() {
-                    TargetVerdict::Unresolvable(format!("Aucune adresse IP résolue pour '{}'", trimmed))
+                    TargetVerdict::Unresolvable(format!(
+                        "Aucune adresse IP résolue pour '{}'",
+                        trimmed
+                    ))
                 } else {
                     TargetVerdict::Resolved(ips)
                 }

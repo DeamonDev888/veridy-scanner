@@ -58,8 +58,17 @@ impl SmbAuditor {
         // 1. Version Samba + OS via nmap
         if let Some(o) = crate::utils::run_tool(
             "nmap",
-            &["-Pn", "-p", "445", "--script=smb-os-discovery,smb2-security-mode",
-              "-sV", "--max-retries", "1", "-T4", target],
+            &[
+                "-Pn",
+                "-p",
+                "445",
+                "--script=smb-os-discovery,smb2-security-mode",
+                "-sV",
+                "--max-retries",
+                "1",
+                "-T4",
+                target,
+            ],
             30,
         ) {
             let s = String::from_utf8_lossy(&o.stdout).to_string();
@@ -85,11 +94,9 @@ impl SmbAuditor {
         }
 
         // 2. Enum shares anonymes
-        if let Some(o) = crate::utils::run_tool(
-            "smbclient",
-            &["-N", "-L", &format!("//{}/", target)],
-            15,
-        ) {
+        if let Some(o) =
+            crate::utils::run_tool("smbclient", &["-N", "-L", &format!("//{}/", target)], 15)
+        {
             let s = String::from_utf8_lossy(&o.stdout).to_string();
             res.raw_evidence.push_str(&s);
             let mut in_share_block = false;
@@ -102,9 +109,18 @@ impl SmbAuditor {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if !parts.is_empty() {
                         let name = parts[0].to_string();
-                        let junk = ["Reconnecting", "Protocol", "Unable", "Server",
-                                    "ntlm_password", "session_setup", "tree",
-                                    "Domain=", "SMB1", "password"];
+                        let junk = [
+                            "Reconnecting",
+                            "Protocol",
+                            "Unable",
+                            "Server",
+                            "ntlm_password",
+                            "session_setup",
+                            "tree",
+                            "Domain=",
+                            "SMB1",
+                            "password",
+                        ];
                         let is_junk = junk.contains(&name.as_str())
                             || name.starts_with("NT_STATUS")
                             || name.starts_with("smb")
@@ -145,7 +161,14 @@ impl SmbAuditor {
         // 4. Enum users via SAMR (via rpcclient)
         if let Some(o) = crate::utils::run_tool(
             "rpcclient",
-            &["-N", "-U", "", "-c", "querydispinfo;enumdomusers;enumdomgroups", target],
+            &[
+                "-N",
+                "-U",
+                "",
+                "-c",
+                "querydispinfo;enumdomusers;enumdomgroups",
+                target,
+            ],
             30,
         ) {
             let s = String::from_utf8_lossy(&o.stdout).to_string();
@@ -156,10 +179,11 @@ impl SmbAuditor {
         }
 
         // 5. SAMR RID cycling 500-550, 1000-1200 (comptes de service cachés)
-        for rid in [500u32, 501, 502, 503, 504, 505, 506, 512, 513, 514, 515,
-                    1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010,
-                    1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019, 1020, 1100, 1101,
-                    1200, 1300, 1400, 1500, 2000, 2001] {
+        for rid in [
+            500u32, 501, 502, 503, 504, 505, 506, 512, 513, 514, 515, 1000, 1001, 1002, 1003, 1004,
+            1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018,
+            1019, 1020, 1100, 1101, 1200, 1300, 1400, 1500, 2000, 2001,
+        ] {
             if let Some(o) = crate::utils::run_tool(
                 "rpcclient",
                 &["-N", "-U", "", "-c", &format!("queryuser {}", rid), target],
@@ -168,7 +192,8 @@ impl SmbAuditor {
                 let s = String::from_utf8_lossy(&o.stdout).to_string();
                 if s.contains("Account:") && !s.contains("NT_STATUS_NONE_MAPPED") {
                     // Extraire le username
-                    if let Some(name) = s.lines()
+                    if let Some(name) = s
+                        .lines()
                         .find(|l| l.contains("Account:"))
                         .and_then(|l| l.split(':').nth(1))
                         .map(|s| s.trim().to_string())
@@ -206,7 +231,8 @@ impl SmbAuditor {
                     );
                     res.brute_force_feasible = true;
                 }
-                res.raw_evidence.push_str(&format!("\n--- PW-POL ---\n{}", s));
+                res.raw_evidence
+                    .push_str(&format!("\n--- PW-POL ---\n{}", s));
             }
         }
 
@@ -245,14 +271,20 @@ fn parse_samr_users(s: &str, out: &mut Vec<SmbUserRecord>) {
                 let account_part = parts.iter().find(|p| p.contains("Account:"));
                 let name_part = parts.iter().find(|p| p.contains("Name:"));
                 if let Some(acct) = account_part {
-                    let username = acct.rsplit("Account:").next().unwrap_or("").trim().to_string();
+                    let username = acct
+                        .rsplit("Account:")
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
                     let full = name_part
                         .and_then(|n| n.split(':').nth(1))
                         .unwrap_or("")
                         .trim()
                         .to_string();
                     let rid_str = parts[0].split("RID:").nth(1).unwrap_or("0").trim();
-                    let rid = u32::from_str_radix(rid_str.trim_start_matches("0x"), 16).unwrap_or(idx);
+                    let rid =
+                        u32::from_str_radix(rid_str.trim_start_matches("0x"), 16).unwrap_or(idx);
                     if !username.is_empty() && !out.iter().any(|u| u.username == username) {
                         out.push(SmbUserRecord {
                             username,

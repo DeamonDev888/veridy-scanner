@@ -1,7 +1,5 @@
-
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct GeoComplianceResult {
     pub ip_address: String,
     pub asn: Option<String>,
@@ -12,7 +10,6 @@ pub struct GeoComplianceResult {
     pub is_canada: bool,
     pub is_quebec: bool,
 }
-
 
 pub struct GeoAuditor;
 

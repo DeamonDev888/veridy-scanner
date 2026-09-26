@@ -4,8 +4,6 @@
 
 use std::process::Command;
 
-
-
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct HttpProbeResult {
     pub url: String,
@@ -27,7 +25,10 @@ impl HttpProbe {
             if which(bin).is_some() {
                 // Test : doit être ProjectDiscovery
                 if let Ok(o) = Command::new(bin).arg("-version").output() {
-                    let s = String::from_utf8_lossy(&o.stdout);
+                    // Le banner ProjectDiscovery ("[INF] Current Version: ...") sort sur
+                    // STDERR, pas stdout : fusionner les deux avant detection.
+                    let mut s = String::from_utf8_lossy(&o.stdout).to_string();
+                    s.push_str(&String::from_utf8_lossy(&o.stderr));
                     if s.contains("Current") {
                         return true;
                     }
@@ -51,9 +52,16 @@ impl HttpProbe {
         let payload = targets.join("\n");
         let mut child = match Command::new(binary)
             .args([
-                "-json", "-silent", "-no-color", "-follow-redirects",
-                "-tech-detect", "-status-code", "-title",
-                "-content-length", "-content-type", "-rt",
+                "-json",
+                "-silent",
+                "-no-color",
+                "-follow-redirects",
+                "-tech-detect",
+                "-status-code",
+                "-title",
+                "-content-length",
+                "-content-type",
+                "-rt",
             ])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -93,26 +101,49 @@ impl HttpProbe {
     pub fn parse_one(line: &str) -> Option<HttpProbeResult> {
         let v: serde_json::Value = serde_json::from_str(line).ok()?;
         let url = v.get("url")?.as_str()?.to_string();
-        let status_code = v.get("status_code").and_then(|x| x.as_u64()).map(|x| x as u16);
+        let status_code = v
+            .get("status_code")
+            .and_then(|x| x.as_u64())
+            .map(|x| x as u16);
         let title = v.get("title").and_then(|x| x.as_str()).map(String::from);
-        let content_length = v.get("content_length").and_then(|x| x.as_u64()).map(|x| x as usize);
-        let content_type = v.get("content_type").and_then(|x| x.as_str()).map(String::from);
+        let content_length = v
+            .get("content_length")
+            .and_then(|x| x.as_u64())
+            .map(|x| x as usize);
+        let content_type = v
+            .get("content_type")
+            .and_then(|x| x.as_str())
+            .map(String::from);
         let redirect_url = None;
         let response_time_ms = None;
-        let technologies = v.get("tech")
+        let technologies = v
+            .get("tech")
             .and_then(|x| x.as_array())
-            .map(|arr| arr.iter().filter_map(|x| x.as_str().map(String::from)).collect())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         Some(HttpProbeResult {
-            url, status_code, title, content_length, technologies,
-            content_type, redirect_url, response_time_ms,
+            url,
+            status_code,
+            title,
+            content_length,
+            technologies,
+            content_type,
+            redirect_url,
+            response_time_ms,
         })
     }
 
     pub fn deduplicate(results: Vec<HttpProbeResult>) -> Vec<HttpProbeResult> {
         use std::collections::HashSet;
         let mut seen = HashSet::new();
-        results.into_iter().filter(|r| seen.insert(r.url.clone())).collect()
+        results
+            .into_iter()
+            .filter(|r| seen.insert(r.url.clone()))
+            .collect()
     }
 }
 

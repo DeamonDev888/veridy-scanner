@@ -52,8 +52,7 @@ fn which(tool: &str) -> Option<std::path::PathBuf> {
 }
 
 fn subfinder_scan(domain: &str) -> Vec<SubdomainResult> {
-    let output = match crate::utils::run_tool("subfinder", &["-d", domain, "-silent", "-nW"], 120)
-    {
+    let output = match crate::utils::run_tool("subfinder", &["-d", domain, "-silent", "-nW"], 120) {
         Some(o) if o.status.success() => o,
         _ => return static_scan(domain),
     };
@@ -80,22 +79,67 @@ fn subfinder_scan(domain: &str) -> Vec<SubdomainResult> {
 
 fn static_scan(domain: &str) -> Vec<SubdomainResult> {
     let prefixes = [
-        "www", "mail", "ftp", "smtp", "imap", "pop", "pop3",
-        "webmail", "email", "mx", "mx1", "ns", "ns1", "ns2", "ns3",
-        "vpn", "remote", "admin", "administrator", "portal",
-        "dev", "test", "stage", "staging", "qa", "uat",
-        "api", "app", "apps", "blog", "cdn", "cloud",
-        "demo", "docs", "git", "gitlab", "github",
-        "grafana", "jenkins", "jira", "kibana",
-        "ldap", "login", "monitor", "monitoring",
-        "shop", "store", "support", "web",
-        "wiki", "wp", "wordpress",
+        "www",
+        "mail",
+        "ftp",
+        "smtp",
+        "imap",
+        "pop",
+        "pop3",
+        "webmail",
+        "email",
+        "mx",
+        "mx1",
+        "ns",
+        "ns1",
+        "ns2",
+        "ns3",
+        "vpn",
+        "remote",
+        "admin",
+        "administrator",
+        "portal",
+        "dev",
+        "test",
+        "stage",
+        "staging",
+        "qa",
+        "uat",
+        "api",
+        "app",
+        "apps",
+        "blog",
+        "cdn",
+        "cloud",
+        "demo",
+        "docs",
+        "git",
+        "gitlab",
+        "github",
+        "grafana",
+        "jenkins",
+        "jira",
+        "kibana",
+        "ldap",
+        "login",
+        "monitor",
+        "monitoring",
+        "shop",
+        "store",
+        "support",
+        "web",
+        "wiki",
+        "wp",
+        "wordpress",
     ];
-    prefixes.iter().map(|p| SubdomainResult {
-        subdomain: format!("{}.{}", p, domain),
-        source: "static".into(),
-        ip_address: None,
-        http_status: None,
-        is_alive: false,
-    }).collect()
+    prefixes
+        .iter()
+        .map(|p| SubdomainResult {
+            subdomain: format!("{}.{}", p, domain),
+            source: "static".into(),
+            ip_address: None,
+            http_status: None,
+            is_alive: false,
+        })
+        .collect()
 }

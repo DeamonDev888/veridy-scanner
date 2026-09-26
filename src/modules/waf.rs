@@ -3,8 +3,7 @@ use crate::utils::{extract_json_bool, extract_json_str};
 use std::fs;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct WafResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -26,7 +25,11 @@ impl WafAuditor {
         let scheme_order = crate::modules::scheme_detect::detect_scheme(&hostport).order;
         let target_url = format!("{}://{}", scheme_order[0], hostport);
         let pid = std::process::id();
-        let tmp_output = format!("/tmp/waf_{}_{}.json", crate::utils::sanitize_target(target), pid);
+        let tmp_output = format!(
+            "/tmp/waf_{}_{}.json",
+            crate::utils::sanitize_target(target),
+            pid
+        );
 
         let output = match crate::utils::run_tool(
             "wafw00f",

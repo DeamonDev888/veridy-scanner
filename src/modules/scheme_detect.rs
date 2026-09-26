@@ -19,30 +19,36 @@ pub fn detect_scheme(hostport: &str) -> SchemePlan {
     let http = !tls && http_answers(hostport);
 
     if tls {
-        SchemePlan { order: vec!["https", "http"], reachable: true }
+        SchemePlan {
+            order: vec!["https", "http"],
+            reachable: true,
+        }
     } else if http {
-        SchemePlan { order: vec!["http", "https"], reachable: true }
+        SchemePlan {
+            order: vec!["http", "https"],
+            reachable: true,
+        }
     } else {
-        SchemePlan { order: vec!["https", "http"], reachable: false }
+        SchemePlan {
+            order: vec!["https", "http"],
+            reachable: false,
+        }
     }
 }
 
 /// Handshake TLS explicite (openssl s_client -brief) : plus fiable que curl -k
 /// car il distingue "pas de TLS" de "HTTP répond".
 fn tls_handshake_answers(hostport: &str) -> bool {
-    crate::utils::run_tool(
-        "openssl",
-        &["s_client", "-connect", hostport, "-brief"],
-        6,
+    crate::utils::run_tool("openssl", &["s_client", "-connect", hostport, "-brief"], 6).is_some_and(
+        |o| {
+            let s = format!(
+                "{}{}",
+                String::from_utf8_lossy(&o.stdout),
+                String::from_utf8_lossy(&o.stderr)
+            );
+            s.contains("CONNECTION ESTABLISHED") || s.contains("Protocol version:")
+        },
     )
-    .is_some_and(|o| {
-        let s = format!(
-            "{}{}",
-            String::from_utf8_lossy(&o.stdout),
-            String::from_utf8_lossy(&o.stderr)
-        );
-        s.contains("CONNECTION ESTABLISHED") || s.contains("Protocol version:")
-    })
 }
 
 /// Le port répond-il en HTTP clair ? (HEAD / → n'importe quel statut HTTP)
@@ -50,9 +56,13 @@ fn http_answers(hostport: &str) -> bool {
     crate::utils::run_tool(
         "curl",
         &[
-            "-s", "-o", "/dev/null",
-            "--max-time", "4",
-            "-w", "%{http_code}",
+            "-s",
+            "-o",
+            "/dev/null",
+            "--max-time",
+            "4",
+            "-w",
+            "%{http_code}",
             &format!("http://{}/", hostport),
         ],
         6,

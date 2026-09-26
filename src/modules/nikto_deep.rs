@@ -2,8 +2,7 @@ use crate::modules::findings::SecurityFinding;
 use std::fs;
 use std::time::Instant;
 
-#[derive(Debug, Clone)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NiktoVulnerability {
     pub id: String,
     pub method: String,
@@ -12,8 +11,7 @@ pub struct NiktoVulnerability {
     pub references: String,
 }
 
-#[derive(Debug, Clone, Default)]
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct NiktoAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -33,7 +31,11 @@ impl NiktoAuditor {
         let scheme_order = crate::modules::scheme_detect::detect_scheme(&hostport).order;
         let target_url = format!("{}://{}", scheme_order[0], hostport);
         let pid = std::process::id();
-        let tmp_output = format!("/tmp/nikto_{}_{}.json", crate::utils::sanitize_target(target), pid);
+        let tmp_output = format!(
+            "/tmp/nikto_{}_{}.json",
+            crate::utils::sanitize_target(target),
+            pid
+        );
 
         let output = match crate::utils::run_tool(
             "nikto",

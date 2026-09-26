@@ -65,7 +65,8 @@ impl FullPortScanner {
         const STATES: usize = 3; // 0=Closed 1=Open 2=Timeout
         let total = (end as usize) - (start as usize) + 1;
         let slots = (total * 2).div_ceil(8); // 2 bits par port
-        let states: Arc<Vec<AtomicU64>> = Arc::new((0..slots.max(1)).map(|_| AtomicU64::new(0)).collect());
+        let states: Arc<Vec<AtomicU64>> =
+            Arc::new((0..slots.max(1)).map(|_| AtomicU64::new(0)).collect());
         let cb = open_callback.map(Arc::new);
 
         let worker_count = 128usize;
@@ -150,9 +151,9 @@ fn probe(ip: std::net::IpAddr, port: u16, timeout: Duration) -> PortState {
         Ok(_) => PortState::Open,
         Err(e) => match e.kind() {
             io::ErrorKind::ConnectionRefused => PortState::Closed,
-            io::ErrorKind::TimedOut
-            | io::ErrorKind::WouldBlock
-            | io::ErrorKind::UnexpectedEof => PortState::Timeout,
+            io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock | io::ErrorKind::UnexpectedEof => {
+                PortState::Timeout
+            }
             _ => PortState::Closed,
         },
     }
@@ -198,7 +199,6 @@ fn grab_banner(ip: std::net::IpAddr, port: u16) -> Option<String> {
     None
 }
 
-
 #[inline]
 fn set_state(states: &[AtomicU64], index: usize, state: PortState) {
     let word = index / 32;
@@ -222,4 +222,3 @@ fn get_state(states: &[AtomicU64], index: usize) -> PortState {
         _ => PortState::Closed,
     }
 }
-
