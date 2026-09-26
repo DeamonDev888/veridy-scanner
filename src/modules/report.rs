@@ -56,7 +56,6 @@ pub struct FullAuditReport {
     pub sqli: Option<Vec<crate::modules::sqli_audit::SqliFinding>>,
     pub loot: Option<LootResult>,
     pub box_probe: Option<crate::modules::box_prober::BoxProbeResult>,
-    pub smb_audit: Option<crate::modules::smb_audit::SmbAuditResult>,
                 pub findings: Vec<SecurityFinding>,
     pub overall_score: u8,
 }
@@ -94,7 +93,6 @@ impl FullAuditReport {
         sqli: Option<Vec<crate::modules::sqli_audit::SqliFinding>>,
         loot: Option<LootResult>,
         box_probe: Option<crate::modules::box_prober::BoxProbeResult>,
-        smb_audit: Option<crate::modules::smb_audit::SmbAuditResult>,
         findings: Vec<SecurityFinding>,
     ) -> Self {
         let mut score: f32 = 100.0;
@@ -142,7 +140,6 @@ impl FullAuditReport {
             sqli,
             loot,
             box_probe,
-            smb_audit,
             findings,
             overall_score,
         }

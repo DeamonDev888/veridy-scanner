@@ -2,7 +2,8 @@ use crate::modules::findings::SecurityFinding;
 use std::fs;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct SslscanResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -23,19 +24,11 @@ impl SslscanAuditor {
         let start = Instant::now();
         let target_host = format!("{}:443", target);
         let pid = std::process::id();
-        let tmp_output = format!(
-            "/tmp/sslscan_{}_{}.xml",
-            crate::utils::sanitize_target(target),
-            pid
-        );
+        let tmp_output = format!("/tmp/sslscan_{}_{}.xml", crate::utils::sanitize_target(target), pid);
 
         let output = match crate::utils::run_tool(
             "sslscan",
-            &[
-                &format!("--xml={}", tmp_output),
-                "--no-failed",
-                &target_host,
-            ],
+            &[&format!("--xml={}", tmp_output), "--no-failed", &target_host],
             90,
         ) {
             Some(o) => o,

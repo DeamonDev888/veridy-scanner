@@ -1,8 +1,8 @@
 use regex::Regex;
-use std::process::Command;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize)]
 pub struct VulnFinding {
     pub id: String,
     pub severity: &'static str, // CRITICAL, HIGH, MEDIUM, LOW, INFO
@@ -14,7 +14,8 @@ pub struct VulnFinding {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default, serde::Serialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize)]
 pub struct VulnAuditResult {
     pub html_retrieved: bool,
     pub cdn_scripts_count: usize,
@@ -29,7 +30,7 @@ pub struct VulnAuditor;
 
 impl VulnAuditor {
     /// Analyse statique et dynamique du contenu Web rendu et des configurations d'origine
-    pub fn audit(domain: &str) -> VulnAuditResult {
+    pub fn audit(domain: &str, custom_ports: &[u16]) -> VulnAuditResult {
         let mut res = VulnAuditResult {
             html_retrieved: false,
             cdn_scripts_count: 0,
@@ -40,20 +41,29 @@ impl VulnAuditor {
             findings: Vec::new(),
         };
 
-        let target_url = format!("https://{}/", domain);
-
-        // 1. Récupération du HTML source
+        // 1. Récupération du HTML source : HTTPS d'abord, fallback HTTP
+        //    (une cible sans TLS ne doit plus rester sans audit applicatif).
+        let hostport = crate::utils::host_with_port(domain, custom_ports);
         let mut html_content = String::new();
-        if let Ok(output) = Command::new("curl")
-            .args(["-s", "-L", "--max-time", "5", &target_url])
-            .output()
-        {
-            if output.status.success() {
-                html_content = String::from_utf8_lossy(&output.stdout).to_string();
-                if !html_content.trim().is_empty() {
-                    res.html_retrieved = true;
-                }
+        if let Some(content) = ["https", "http"].iter().find_map(|scheme| {
+            let target_url = format!("{}://{}/", scheme, hostport);
+            let output = crate::utils::run_tool(
+                "curl",
+                &["-s", "-L", "--max-time", "5", &target_url],
+                600,
+            )?;
+            if !output.status.success() {
+                return None;
             }
+            let c = String::from_utf8_lossy(&output.stdout).to_string();
+            if c.trim().is_empty() {
+                None
+            } else {
+                Some(c)
+            }
+        }) {
+            html_content = content;
+            res.html_retrieved = true;
         }
 
         if res.html_retrieved {
@@ -71,7 +81,7 @@ impl VulnAuditor {
         }
 
         // E. Audit CORS (Test avec Origin externe)
-        Self::check_cors(domain, &mut res);
+        Self::check_cors(domain, custom_ports, &mut res);
 
         res
     }
@@ -81,15 +91,15 @@ impl VulnAuditor {
 
         // Détection jQuery : ancrée aux attributs src/href d'une URL (évite les faux
         // positifs sur du texte/commentaires) + version complète majeur.mineur[.patch]
-        let jq_re =
-            Regex::new(r#"(?:src|href)\s*=\s*["'][^"']*jquery[/-]?(\d+)\.(\d+)(?:\.(\d+))?["']"#)
-                .unwrap();
+        let jq_re = Regex::new(
+            r#"(?:src|href)\s*=\s*["'][^"']*jquery[/-]?(\d+)\.(\d+)(?:\.(\d+))?["']"#,
+        )
+        .unwrap();
         if let Some(caps) = jq_re.captures(&lower) {
             let major: u32 = caps[1].parse().unwrap_or(u32::MAX);
             let minor: u32 = caps[2].parse().unwrap_or(u32::MAX);
             if (major, minor) < (3, 5) {
-                res.detected_libraries
-                    .push(format!("jQuery {}.{} < 3.5.0", major, minor));
+                res.detected_libraries.push(format!("jQuery {}.{} < 3.5.0", major, minor));
                 res.findings.push(VulnFinding {
                     id: "cve-jquery-xss".into(),
                     severity: "HIGH",
@@ -100,8 +110,7 @@ impl VulnAuditor {
                     owasp: "A06:2021 - Vulnerable and Outdated Components",
                 });
             } else {
-                res.detected_libraries
-                    .push(format!("jQuery {}.{}", major, minor));
+                res.detected_libraries.push(format!("jQuery {}.{}", major, minor));
             }
         }
 
@@ -133,9 +142,8 @@ impl VulnAuditor {
         // Regex stricte : <script src="https://cdn..."> ou <link href="https://cdn...">
         // Capture le tag complet pour vérifier la présence d'integrity= dans le même tag.
         let tag_re = Regex::new(
-            r#"<(?:script|link)\b[^>]*?\s(?:src|href)\s*=\s*["'](https?://[^"']+)["'][^>]*>"#,
-        )
-        .unwrap();
+            r#"<(?:script|link)\b[^>]*?\s(?:src|href)\s*=\s*["'](https?://[^"']+)["'][^>]*>"#
+        ).unwrap();
 
         for cap in tag_re.captures_iter(html) {
             let url = cap[1].to_lowercase();
@@ -167,10 +175,8 @@ impl VulnAuditor {
     fn check_mixed_content(html: &str, res: &mut VulnAuditResult) {
         // Mixed content : occurrences réelles (pas des lignes), guillemets simples inclus
         let src_http_re = Regex::new(r#"src\s*=\s*["']http://[^"']+"#).unwrap();
-        let css_http_re =
-            Regex::new(r#"href\s*=\s*["']http://[^"']*\.(?:css|js|mjs)["']"#).unwrap();
-        res.mixed_content_count =
-            src_http_re.find_iter(html).count() + css_http_re.find_iter(html).count();
+        let css_http_re = Regex::new(r#"href\s*=\s*["']http://[^"']*\.(?:css|js|mjs)["']"#).unwrap();
+        res.mixed_content_count = src_http_re.find_iter(html).count() + css_http_re.find_iter(html).count();
 
         if res.mixed_content_count > 0 {
             res.findings.push(VulnFinding {
@@ -207,64 +213,16 @@ impl VulnAuditor {
 
         // Divulgation de secrets / clés API dans le code source public (touche pro)
         let secret_patterns: &[(&str, &str, &str)] = &[
-            (
-                r"AIza[0-9A-Za-z_\-]{35}",
-                "Clé API Google exposée dans la page",
-                "HIGH",
-            ),
-            (
-                r"sk_live_[0-9a-zA-Z]{20,}",
-                "Clé secrète Stripe (mode LIVE) exposée",
-                "CRITICAL",
-            ),
-            (
-                r"gh[pousr]_[0-9A-Za-z]{20,}",
-                "Token GitHub (PAT) exposé",
-                "HIGH",
-            ),
+            (r"AIza[0-9A-Za-z_\-]{35}", "Clé API Google exposée dans la page", "HIGH"),
+            (r"sk_live_[0-9a-zA-Z]{20,}", "Clé secrète Stripe (mode LIVE) exposée", "CRITICAL"),
+            (r"gh[pousr]_[0-9A-Za-z]{20,}", "Token GitHub (PAT) exposé", "HIGH"),
             (r"AKIA[0-9A-Z]{16}", "Access Key ID AWS exposée", "HIGH"),
-            (
-                r"xox[baprs]-[0-9A-Za-z\-]{10,}",
-                "Token Slack exposé",
-                "HIGH",
-            ),
-            (
-                r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
-                "Clé privée embarquée dans la page",
-                "CRITICAL",
-            ),
+            (r"xox[baprs]-[0-9A-Za-z\-]{10,}", "Token Slack exposé", "HIGH"),
+            (r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----", "Clé privée embarquée dans la page", "CRITICAL"),
         ];
         for (pat, title, sev) in secret_patterns {
             if let Ok(re) = Regex::new(pat) {
                 if re.is_match(html) {
-                    // Validation ACTIVE pour les clés Google : une clé referer-restricted
-                    // n'est pas exploitable => déclassée LOW au lieu de HIGH (faux positif).
-                    let mut eff_sev = *sev;
-                    if pat.starts_with("AIza") {
-                        if let Some(m) = re.find(html) {
-                            let key = m.as_str();
-                            match validate_google_key(key) {
-                                GoogleKeyStatus::FullyUsable => {}
-                                GoogleKeyStatus::Restricted => eff_sev = "LOW",
-                                GoogleKeyStatus::NetworkError => {} // conservé tel quel
-                            }
-                            if eff_sev == "LOW" {
-                                res.findings.push(VulnFinding {
-                                    id: "vuln-secret-exposure".into(),
-                                    severity: "LOW",
-                                    category: "SECRETS",
-                                    title: "Clé API Google exposée mais restreinte (referer/IP)".into(),
-                                    description: format!(
-                                        "Clé {}... visible dans le HTML public, mais l'API Google répond REQUEST_DENIED : elle est protégée par des restrictions referer/IP. Non exploitable directement.",
-                                        &key[..10.min(key.len())]
-                                    ),
-                                    fix: "Conserver les restrictions; envisager une rotation de la clé et un préfixe crypto pour durcir davantage.".into(),
-                                    owasp: "A02:2021 - Cryptographic Failures",
-                                });
-                                continue;
-                            }
-                        }
-                    }
                     res.findings.push(VulnFinding {
                         id: "vuln-secret-exposure".into(),
                         severity: match *sev {
@@ -283,20 +241,27 @@ impl VulnAuditor {
         }
     }
 
-    fn check_cors(domain: &str, res: &mut VulnAuditResult) {
-        let target_url = format!("https://{}/", domain);
-        if let Ok(out) = Command::new("curl")
-            .args([
-                "-s",
-                "-I",
-                "-H",
-                "Origin: https://evil.veridy-test.com",
-                "--max-time",
-                "4",
-                &target_url,
-            ])
-            .output()
-        {
+    fn check_cors(domain: &str, custom_ports: &[u16], res: &mut VulnAuditResult) {
+        // HTTPS d'abord, fallback HTTP — même règle que le fetch du HTML.
+        let hostport = crate::utils::host_with_port(domain, custom_ports);
+        let cors_output = ["https", "http"].iter().find_map(|scheme| {
+            let target_url = format!("{}://{}/", scheme, hostport);
+            crate::utils::run_tool(
+                "curl",
+                &[
+                    "-s",
+                    "-I",
+                    "-H",
+                    "Origin: https://evil.veridy-test.com",
+                    "--max-time",
+                    "4",
+                    &target_url,
+                ],
+                300,
+            )
+            .filter(|o| o.status.success())
+        });
+        if let Some(out) = cors_output {
             let s = String::from_utf8_lossy(&out.stdout);
             let mut allow_origin = None;
             let mut allow_credentials = false;
@@ -304,7 +269,8 @@ impl VulnAuditor {
             for line in s.lines() {
                 let lower = line.to_lowercase();
                 if lower.starts_with("access-control-allow-origin:") {
-                    allow_origin = Some(
+                    allow_origin =
+                        Some(
                         line.split_once(':')
                             .map(|x| x.1)
                             .unwrap_or("")
@@ -344,45 +310,5 @@ impl VulnAuditor {
                 }
             }
         }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum GoogleKeyStatus {
-    /// L'API répond 200 : la clé fonctionne depuis n'importe où => réellement exploitable.
-    FullyUsable,
-    /// REQUEST_DENIED / 403 : restrictions referer ou IP en place => non exploitable.
-    Restricted,
-    /// Réseau indisponible : on conserve la sévérité d'origine (prudence).
-    NetworkError,
-}
-
-/// Teste une clé API Google contre l'endpoint staticmap (coût nul, quota gratuit).
-fn validate_google_key(key: &str) -> GoogleKeyStatus {
-    let url = format!(
-        "https://maps.googleapis.com/maps/api/staticmap?center=montreal&size=64x64&key={}",
-        key
-    );
-    let out = crate::utils::run_tool(
-        "curl",
-        &[
-            "-s",
-            "-o",
-            "/dev/null",
-            "-w",
-            "%{http_code}",
-            "--max-time",
-            "8",
-            &url,
-        ],
-        10,
-    );
-    let code: Option<u16> = out
-        .as_ref()
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok());
-    match code {
-        Some(200) => GoogleKeyStatus::FullyUsable,
-        Some(400) | Some(403) => GoogleKeyStatus::Restricted,
-        _ => GoogleKeyStatus::NetworkError,
     }
 }

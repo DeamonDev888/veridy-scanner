@@ -1,7 +1,8 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct NucleiItem {
     pub template_id: String,
     pub name: String,
@@ -10,7 +11,8 @@ pub struct NucleiItem {
     pub description: String,
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct NucleiAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -24,7 +26,11 @@ pub struct NucleiAuditor;
 impl NucleiAuditor {
     pub fn audit(target: &str) -> NucleiAuditResult {
         let start = Instant::now();
-        let target_url = format!("https://{}", target);
+        // Schéma détecté : les box HTB servent souvent du HTTP pur sur un port
+        // exotique — l ancien https:// forcé rendait l outil aveugle (0 findings).
+        let hostport = crate::utils::host_with_port(target, &[]);
+        let scheme_order = crate::modules::scheme_detect::detect_scheme(&hostport).order;
+        let target_url = format!("{}://{}", scheme_order[0], hostport);
 
         let output = match crate::utils::run_tool(
             "nuclei",

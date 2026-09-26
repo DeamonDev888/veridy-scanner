@@ -382,41 +382,16 @@ impl AuditOrchestrator {
             None
         };
 
-        // RustScan : balayage de TOUS les ports (65535). Si le binaire rustscan
-        // est absent, FALLBACK natif FullPortScanner (TCP connect async, pool
-        // de 128 workers) : --rustscan garantit désormais la couverture
-        // complète même sans l'outil externe.
+        // RustScan : balayage SYN de tous les ports (alternatif au scanner core)
         let handle_rustscan = if let Some(idx) = idx_rustscan {
             let tracker_c = Arc::clone(&tracker);
             let t = target.clone();
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
-                tracker_c.set_running(idx, "Balayage des 65535 ports...");
+                tracker_c.set_running(idx, "Balayage SYN des 65535 ports...");
                 run_guarded(t0, &tracker_c, idx, "RustScan", || {
-                    // NATIF en priorité : TCP connect 128 workers, déterministe
-                    // (rustscan externe s est montré non-déterministe : ports
-                    // sautés selon les runs). Le natif couvre les 65535 en ~5 s.
-                    let start = Instant::now();
-                    let results = crate::modules::full_portscan::FullPortScanner::scan_all(
-                        &t,
-                        Duration::from_millis(1200),
-                        None::<fn(u16)>,
-                    );
-                    let mut open_ports: Vec<u16> = results.iter().map(|r| r.port).collect();
-                    let elapsed = start.elapsed().as_millis() as u64;
-                    // Secours rustscan si le natif n a rien vu mais que l hôte
-                    // répond ailleurs (parano double-check, aucun coût si vide)
-                    if open_ports.is_empty() && RustScanWrapper::is_available() {
-                        if let Ok(rs) = RustScanWrapper::scan_ports(&t, 3) {
-                            open_ports = rs.open_ports;
-                        }
-                    }
-                    crate::modules::portscan_rustscan::RustScanResult {
-                        host: t.clone(),
-                        open_ports,
-                        scan_duration_ms: elapsed,
-                        success: true,
-                    }
+                    RustScanWrapper::scan_ports(&t, 3)
+                        .unwrap_or_default()
                 })
             }))
         } else {
@@ -572,16 +547,6 @@ impl AuditOrchestrator {
             None
         };
 
-        let mut open_ports_early: Vec<u16> = port_results.iter().map(|p| p.port).collect();
-        if let Some(ref rs) = rustscan_result {
-            for p in &rs.open_ports {
-                if !open_ports_early.contains(p) {
-                    open_ports_early.push(*p);
-                }
-            }
-        }
-        let open_smb = open_ports_early.contains(&445) || open_ports_early.contains(&139);
-
         // Module BoxProber : probes actifs spécifiques lab/box (FTP anonymous,
         // Redis PING, SNMP public, titres HTTP sur ports exotiques). Tourne
         // uniquement sur cible IP, après le scan de ports.
@@ -606,14 +571,6 @@ impl AuditOrchestrator {
                     target, &open_ports,
                 ))
             }
-        } else {
-            None
-        };
-
-        // Module SmbAuditor : énumération SAMR null-session (utilisateurs,
-        // hostname, domaine) dès que 445 est ouvert — polyvalent, pas HTB-only.
-        let smb_audit_result = if open_smb {
-            Some(crate::modules::smb_audit::SmbAuditor::audit(target))
         } else {
             None
         };
@@ -735,16 +692,6 @@ impl AuditOrchestrator {
         if let Some(ref bp) = box_probe_result {
             findings.extend(bp.findings.iter().cloned());
         }
-        if let Some(ref sm) = smb_audit_result {
-            for f in &sm.findings {
-                findings.push(SecurityFinding {
-                    severity: "INFO",
-                    category: "SMB",
-                    title: f.clone(),
-                    recommendation: "Voir le module SMB pour le detail utilisateur / SAMR / partage.".to_string(),
-                });
-            }
-        }
 
         let duration = start_time.elapsed();
         let timestamp = iso_timestamp();
@@ -780,7 +727,6 @@ impl AuditOrchestrator {
             sqli_result,
             loot_result,
             box_probe_result,
-            smb_audit_result,
             findings,
         )
     }

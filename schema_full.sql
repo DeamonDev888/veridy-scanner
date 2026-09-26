@@ -4,7 +4,7 @@ BEGIN;
 -- 1. Table principale de scan
 CREATE TABLE IF NOT EXISTS audit_scans (
     id BIGSERIAL PRIMARY KEY,
-    target VARCHAR(255) NOT NULL,
+    target VARCHAR(255) NOT NULL -- rétro-compat : longueur max cible raisonnable (un nom de domaine + sous-domaines),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     overall_score SMALLINT NOT NULL,
     duration_seconds REAL DEFAULT 0.0,
@@ -64,7 +64,7 @@ CREATE TABLE IF NOT EXISTS audit_tls_certs (
 CREATE TABLE IF NOT EXISTS audit_subdomains (
     id BIGSERIAL PRIMARY KEY,
     scan_id BIGINT REFERENCES audit_scans(id) ON DELETE CASCADE,
-    subdomain VARCHAR(255) NOT NULL,
+    subdomain TEXT NOT NULL,
     ip_address VARCHAR(45),
     http_status INT,
     is_alive BOOLEAN DEFAULT FALSE
@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS audit_findings (
     scan_id BIGINT REFERENCES audit_scans(id) ON DELETE CASCADE,
     severity VARCHAR(16) NOT NULL, -- CRITICAL, HIGH, MEDIUM, LOW, INFO
     category VARCHAR(32) NOT NULL, -- DNS, PORT, HTTP, TLS, COOKIE
-    title VARCHAR(255) NOT NULL,
+    title TEXT NOT NULL,
     recommendation TEXT NOT NULL
 );
 

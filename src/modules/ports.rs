@@ -20,7 +20,8 @@ pub const EXTENDED_TARGET_PORTS: &[u16] = &[
 ];
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct PortScanResult {
     pub port: u16,
     pub is_open: bool,
@@ -31,6 +32,17 @@ pub struct PortScanResult {
 pub struct PortScanner;
 
 impl PortScanner {
+    /// Le port mérite-t-il un probe de titre HTTP ? Ports web courants +
+    /// fourchette 8000-10000 où vivent les services d'apps des box.
+    pub fn titles_probe_worthy(port: u16) -> bool {
+        matches!(port,
+            80 | 443 | 591 | 3000 | 3001 | 4444 | 5000 | 5601 | 6000 | 6080
+            | 6443 | 7000 | 7001 | 7080 | 8000..=8099 | 8180 | 8280 | 8380
+            | 8443 | 8500 | 8600 | 8800 | 8888 | 8899 | 9000..=9099
+            | 9200 | 9443 | 9800 | 9980 | 10000..=10010
+        )
+    }
+
     /// Identifie le nom de service usuel associé au port.
     pub fn guess_service(port: u16) -> &'static str {
         match port {
@@ -145,7 +157,6 @@ fn probe_port(target: &str, port: u16, timeout: Duration) -> Option<PortScanResu
 
                 // Tentative de lecture spontanée (SSH, FTP, SMTP)
                 let mut buf = [0u8; 256];
-                let __t1 = std::time::Instant::now();
                 if let Ok(n) = stream.read(&mut buf) {
                     if n > 0 {
                         let s = String::from_utf8_lossy(&buf[..n]).trim().to_string();
@@ -156,7 +167,8 @@ fn probe_port(target: &str, port: u16, timeout: Duration) -> Option<PortScanResu
                 }
 
                 // Si rien reçu et port Web, probe HEAD
-                if banner.is_none() && (port == 80 || port == 8080 || port == 8000 || port == 8888)
+                if banner.is_none()
+                    && (port == 80 || port == 8080 || port == 8000 || port == 8888)
                 {
                     let probe = format!("HEAD / HTTP/1.0\r\nHost: {}\r\n\r\n", target);
                     if stream.write_all(probe.as_bytes()).is_ok() {

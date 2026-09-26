@@ -1,7 +1,8 @@
 use std::net::{IpAddr, ToSocketAddrs};
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct DnsRecordEntry {
     pub record_type: String,
     pub value: String,
@@ -9,7 +10,8 @@ pub struct DnsRecordEntry {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct DnsAuditResult {
     pub domain: String,
     pub a_records: Vec<String>,
@@ -96,20 +98,40 @@ impl DnsAuditor {
         // 2. Résolution approfondie via dig
         Self::enrich_via_dig(domain, &mut result);
 
-        // 3. Reverse PTR sur la première IP
+        // 3. Reverse PTR sur la première IP — natif UDP (zéro spawn dig)
         if let Some(first_ip) = result.a_records.first() {
-            if let Some(out) =
-                crate::utils::run_tool("dig", &["+short", "-x", first_ip, "+time=2", "+tries=1"], 8)
-            {
-                let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !s.is_empty() {
-                    result.reverse_ptr = Some(s.clone());
-                    result.all_records.push(DnsRecordEntry {
-                        record_type: "PTR".to_string(),
-                        value: s,
-                        is_secure: false,
-                    });
+            let mut s = String::new();
+            if let Some(ans) = crate::modules::netdns::query(
+                first_ip,
+                "PTR",
+                std::time::Duration::from_secs(2),
+            ) {
+                for (v, _) in &ans.answers {
+                    if !v.is_empty() && !s.is_empty() {
+                        s.push(' ');
+                    }
+                    if !v.is_empty() {
+                        s.push_str(v);
+                    }
                 }
+            }
+            if s.is_empty() {
+                // fallback dig (réseaux où UDP 53 sortant est bloqué)
+                if let Some(out) = crate::utils::run_tool(
+                    "dig",
+                    &["+short", "-x", first_ip, "+time=2", "+tries=1"],
+                    8,
+                ) {
+                    s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                }
+            }
+            if !s.is_empty() {
+                result.reverse_ptr = Some(s.clone());
+                result.all_records.push(DnsRecordEntry {
+                    record_type: "PTR".to_string(),
+                    value: s,
+                    is_secure: false,
+                });
             }
         }
 
@@ -168,61 +190,108 @@ impl DnsAuditor {
     }
 
     fn enrich_via_dig(domain: &str, result: &mut DnsAuditResult) {
-        // MX
-        if let Some(output) =
-            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "MX", domain], 8)
-        {
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    result.mx_records.push(trimmed.to_string());
-                    result.all_records.push(DnsRecordEntry {
-                        record_type: "MX".to_string(),
-                        value: trimmed.to_string(),
-                        is_secure: false,
-                    });
+        // MX natif UDP
+        let mut got_mx_records: Vec<String> = Vec::new();
+        if let Some(ans) = crate::modules::netdns::query(domain, "MX", std::time::Duration::from_secs(2)) {
+            for (v, _) in &ans.answers {
+                let t = v.trim().trim_matches('"').to_string();
+                if !t.is_empty() {
+                    got_mx_records.push(t);
                 }
             }
         }
-
-        // NS
-        if let Some(output) =
-            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "NS", domain], 8)
-        {
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    result.ns_records.push(trimmed.to_string());
-                    result.all_records.push(DnsRecordEntry {
-                        record_type: "NS".to_string(),
-                        value: trimmed.to_string(),
-                        is_secure: false,
-                    });
+        if got_mx_records.is_empty() {
+            if let Some(output) = crate::utils::run_tool(
+                "dig",
+                &["+short", "+time=2", "+tries=1", "MX", domain],
+                8,
+            ) {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    let trimmed = line.trim().trim_matches('"');
+                    if !trimmed.is_empty() {
+                        got_mx_records.push(trimmed.to_string());
+                    }
                 }
             }
         }
-
-        // TXT
-        if let Some(output) =
-            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "TXT", domain], 8)
-        {
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                let trimmed = line.trim().trim_matches('"');
-                if !trimmed.is_empty() {
-                    result.txt_records.push(trimmed.to_string());
-                    result.all_records.push(DnsRecordEntry {
-                        record_type: "TXT".to_string(),
-                        value: trimmed.to_string(),
-                        is_secure: false,
-                    });
+        for t in got_mx_records {
+            result.mx_records.push(t.clone());
+            result.all_records.push(DnsRecordEntry {
+                record_type: "MX".to_string(),
+                value: t,
+                is_secure: false,
+            });
+        }
+        // NS natif UDP
+        let mut got_ns_records: Vec<String> = Vec::new();
+        if let Some(ans) = crate::modules::netdns::query(domain, "NS", std::time::Duration::from_secs(2)) {
+            for (v, _) in &ans.answers {
+                let t = v.trim().trim_matches('"').to_string();
+                if !t.is_empty() {
+                    got_ns_records.push(t);
                 }
             }
         }
-
+        if got_ns_records.is_empty() {
+            if let Some(output) = crate::utils::run_tool(
+                "dig",
+                &["+short", "+time=2", "+tries=1", "NS", domain],
+                8,
+            ) {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    let trimmed = line.trim().trim_matches('"');
+                    if !trimmed.is_empty() {
+                        got_ns_records.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+        for t in got_ns_records {
+            result.ns_records.push(t.clone());
+            result.all_records.push(DnsRecordEntry {
+                record_type: "NS".to_string(),
+                value: t,
+                is_secure: false,
+            });
+        }
+        // TXT natif UDP
+        let mut got_txt_records: Vec<String> = Vec::new();
+        if let Some(ans) = crate::modules::netdns::query(domain, "TXT", std::time::Duration::from_secs(2)) {
+            for (v, _) in &ans.answers {
+                let t = v.trim().trim_matches('"').to_string();
+                if !t.is_empty() {
+                    got_txt_records.push(t);
+                }
+            }
+        }
+        if got_txt_records.is_empty() {
+            if let Some(output) = crate::utils::run_tool(
+                "dig",
+                &["+short", "+time=2", "+tries=1", "TXT", domain],
+                8,
+            ) {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    let trimmed = line.trim().trim_matches('"');
+                    if !trimmed.is_empty() {
+                        got_txt_records.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+        for t in got_txt_records {
+            result.txt_records.push(t.clone());
+            result.all_records.push(DnsRecordEntry {
+                record_type: "TXT".to_string(),
+                value: t,
+                is_secure: false,
+            });
+        }
         // SOA
-        if let Some(output) =
-            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "SOA", domain], 8)
-        {
+        if let Some(output) = crate::utils::run_tool(
+            "dig",
+            &["+short", "+time=2", "+tries=1", "SOA", domain],
+            8,
+        ) {
             let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
             if !s.is_empty() {
                 result.soa_record = Some(s.clone());
@@ -234,23 +303,38 @@ impl DnsAuditor {
             }
         }
 
-        // CAA
-        if let Some(output) =
-            crate::utils::run_tool("dig", &["+short", "+time=2", "+tries=1", "CAA", domain], 8)
-        {
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                let trimmed = line.trim();
-                if !trimmed.is_empty() {
-                    result.caa_records.push(trimmed.to_string());
-                    result.all_records.push(DnsRecordEntry {
-                        record_type: "CAA".to_string(),
-                        value: trimmed.to_string(),
-                        is_secure: false,
-                    });
+        // CAA natif UDP
+        let mut got_caa_records: Vec<String> = Vec::new();
+        if let Some(ans) = crate::modules::netdns::query(domain, "CAA", std::time::Duration::from_secs(2)) {
+            for (v, _) in &ans.answers {
+                let t = v.trim().trim_matches('"').to_string();
+                if !t.is_empty() {
+                    got_caa_records.push(t);
                 }
             }
         }
-
+        if got_caa_records.is_empty() {
+            if let Some(output) = crate::utils::run_tool(
+                "dig",
+                &["+short", "+time=2", "+tries=1", "CAA", domain],
+                8,
+            ) {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    let trimmed = line.trim().trim_matches('"');
+                    if !trimmed.is_empty() {
+                        got_caa_records.push(trimmed.to_string());
+                    }
+                }
+            }
+        }
+        for t in got_caa_records {
+            result.caa_records.push(t.clone());
+            result.all_records.push(DnsRecordEntry {
+                record_type: "CAA".to_string(),
+                value: t,
+                is_secure: false,
+            });
+        }
         // DNSSEC : détection via le flag AD (Authentic Data) de la réponse DS.
         // Plus fiable que DNSKEY : certains résolveurs ne relaient pas les DNSKEY,
         // ce qui produisait des faux négatifs sur des zones pourtant signées.
@@ -261,7 +345,8 @@ impl DnsAuditor {
         ) {
             let s = String::from_utf8_lossy(&out.stdout);
             let ad_flag = s.lines().any(|l| {
-                l.trim_start().starts_with(";; flags:") && l.split_whitespace().any(|t| t == "ad")
+                l.trim_start().starts_with(";; flags:")
+                    && l.split_whitespace().any(|t| t == "ad")
             });
             if ad_flag {
                 result.dnssec_active = true;

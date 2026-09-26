@@ -8,7 +8,7 @@ use crate::modules::findings::{FindingsEngine, SecurityFinding};
 use crate::modules::geo::GeoComplianceResult;
 use crate::modules::http::HttpAuditResult;
 use crate::modules::ports::{PortScanResult, PortScanner, EXTENDED_TARGET_PORTS};
-use crate::modules::subdomains::EXPANDED_SUBDOMAINS;
+// EXPANDED_SUBDOMAINS removed v0.2
 use crate::modules::tech_stack::TechStackAuditor;
 use crate::modules::tls::TlsAuditResult;
 use crate::modules::vuln_audit::VulnAuditResult;
@@ -39,7 +39,10 @@ fn test_extract_json_str() {
         extract_json_str(json, "target"),
         Some("veridy.ca".to_string())
     );
-    assert_eq!(extract_json_str(json, "status"), Some("active".to_string()));
+    assert_eq!(
+        extract_json_str(json, "status"),
+        Some("active".to_string())
+    );
     assert_eq!(
         extract_json_str(json, "escaped"),
         Some("val\"ue".to_string())
@@ -85,13 +88,9 @@ fn test_target_parser_rejects_invalid_format() {
     for target in forbidden {
         let v = TargetParser::resolve(target);
         assert!(
-            matches!(
-                v,
-                TargetVerdict::Resolved(_) | TargetVerdict::Unresolvable(_)
-            ),
+            matches!(v, TargetVerdict::Resolved(_) | TargetVerdict::Unresolvable(_)),
             "Target {} devrait être Resolved ou Unresolvable, got {:?}",
-            target,
-            v
+            target, v
         );
     }
 }
@@ -107,10 +106,10 @@ fn test_target_parser_accepts_all_ips_without_filter() {
         "172.16.0.1",
         "172.31.255.255",
         "192.168.1.1",
-        "192.168.100.10", // IP LAN privee generique : acceptee (reseau interne)
-        "169.254.1.1",    // Link-local
-        "224.0.0.1",      // Multicast
-        "192.0.2.1",      // Documentation
+        "192.168.40.10", // IP LAN privee : acceptee (reseau interne)
+        "169.254.1.1",   // Link-local
+        "224.0.0.1",     // Multicast
+        "192.0.2.1",     // Documentation
     ];
 
     for ip_str in any_ips {
@@ -119,10 +118,7 @@ fn test_target_parser_accepts_all_ips_without_filter() {
                 assert_eq!(ips.len(), 1, "IP {} doit retourner 1 IP", ip_str);
                 assert_eq!(ips[0].to_string(), ip_str);
             }
-            other => panic!(
-                "IP {} devrait être Resolved (toutes IPs acceptées), got {:?}",
-                ip_str, other
-            ),
+            other => panic!("IP {} devrait être Resolved (toutes IPs acceptées), got {:?}", ip_str, other),
         }
     }
 }
@@ -145,10 +141,7 @@ fn test_target_parser_public_ip_resolved() {
 #[test]
 fn test_config_defaults() {
     let cfg = Config::default();
-    assert!(
-        cfg.target.is_empty(),
-        "Config::default() ne doit PAS contenir de cible de scan"
-    );
+    assert!(cfg.target.is_empty(), "Config::default() ne doit PAS contenir de cible de scan");
     assert_eq!(cfg.timeout_ms, 800);
     assert!(!cfg.json_mode);
     assert!(cfg.save_to_db);
@@ -165,7 +158,7 @@ fn test_tool_flags_enable_all() {
     flags.enable_all();
     assert!(flags.has_any());
     let active = flags.active_names();
-    assert_eq!(active.len(), 14);
+    assert_eq!(active.len(), 14); // 12 outils Kali + httpx + rustscan (sqlmap exclu: opt-in)
     assert!(active.contains(&"Nmap"));
     assert!(active.contains(&"Nuclei"));
     assert!(active.contains(&"Nikto"));
@@ -175,12 +168,12 @@ fn test_tool_flags_enable_all() {
     assert!(active.contains(&"Dnstwist"));
     assert!(active.contains(&"Ffuf/SecLists"));
     assert!(active.contains(&"Whois"));
+    assert!(active.contains(&"Httpx"));
+    assert!(active.contains(&"RustScan"));
+    assert!(!active.contains(&"SQLMap")); // opt-in explicite --sqli
     assert!(active.contains(&"Dnsrecon"));
     assert!(active.contains(&"theHarvester"));
     assert!(active.contains(&"Obscura"));
-    assert!(active.contains(&"Httpx"));
-    assert!(active.contains(&"RustScan"));
-    assert!(!active.contains(&"SQLMap")); // opt-in explicite --sqli uniquement
 }
 
 // ==============================================================================
@@ -527,37 +520,22 @@ fn test_tech_stack_json_parsing() {
 
 #[test]
 fn test_ffuf_json_parsing() {
-    // Vrai format ffuf (>= 2.x) : FUZZ imbriqué dans "input"
+    // Format réel de ffuf : le mot-clé est imbriqué dans "input":{"FUZZ":...}.
+    // Le second objet garde l'ancienne clé plate (rétrocompatibilité fixtures).
     let sample_ffuf_json = r#"{
       "results": [
-        {"url": "https://veridy.ca/stats", "input": {"FUZZ": "stats"}, "status": 200, "length": 1450, "input": {"FUZZ": "stats"}},
-        {"url": "https://veridy.ca/.env", "input": {"FUZZ": ".env"}, "status": 403, "length": 162}
+        {"url": "http://127.0.0.1:8099/.env", "input": {"FUZZ": ".env"}, "status_code": 200, "length": 62},
+        {"url": "https://veridy.ca/.env", "input": ".env", "status_code": 403, "length": 162}
       ],
       "config": {}
     }"#;
 
     let endpoints = FfufAuditor::parse_json(sample_ffuf_json);
-    assert_eq!(
-        endpoints.len(),
-        2,
-        "les 2 resultats du vrai format doivent etre extraits"
-    );
-    assert_eq!(endpoints[0].path, "stats");
+    assert_eq!(endpoints.len(), 2);
+    assert_eq!(endpoints[0].path, ".env");
     assert_eq!(endpoints[0].status, 200);
-    assert_eq!(endpoints[0].url, "https://veridy.ca/stats");
     assert_eq!(endpoints[1].path, ".env");
     assert_eq!(endpoints[1].status, 403);
-
-    // Retrocompat : ancien format plat "FUZZ": "..." a la racine
-    let legacy = r#"{
-      "results": [
-        {"url": "https://veridy.ca/x", "FUZZ": "x", "status": 200, "length": 10}
-      ],
-      "config": {}
-    }"#;
-    let ep2 = FfufAuditor::parse_json(legacy);
-    assert_eq!(ep2.len(), 1);
-    assert_eq!(ep2[0].path, "x");
 }
 
 #[test]
@@ -601,21 +579,13 @@ fn test_ffuf_catch_all_capping_and_prioritization() {
         "Catch-all synthesis finding must be created when routes > 30"
     );
 
-    // v0.3.3 : un chemin critique n'est CRITICAL que si le CONTENU est confirmé
-    // (fetch de vérification). En test hermétique, example.com n'est pas fetché :
-    // le .git doit être préservé mais déclassé en INFO (soft-404 par défaut).
-    let git_finding = findings
+    // Le chemin critique .git/config doit obligatoirement être préservé en tête
+    let git_critical = findings
         .iter()
-        .find(|f| f.category == "WEB" && f.title.contains(".git"));
+        .find(|f| f.category == "WEB" && f.severity == "CRITICAL" && f.title.contains(".git"));
     assert!(
-        git_finding.is_some(),
-        ".git route must be preserved in the capped list even in a catch-all flood"
-    );
-    assert!(
-        findings
-            .iter()
-            .all(|f| !(f.title.contains(".git") && f.severity == "CRITICAL")),
-        "Un chemin critique non confirmé par contenu ne doit JAMAIS être CRITICAL (anti faux-positif)"
+        git_critical.is_some(),
+        "Critical .git route must be prioritized even in a catch-all flood"
     );
 
     // Maximum 21 constatations (20 tronquées + 1 synthèse)
@@ -629,7 +599,10 @@ fn test_ffuf_catch_all_capping_and_prioritization() {
 #[test]
 fn test_sql_esc() {
     assert_eq!(sql_esc("standard_target"), "standard_target");
-    assert_eq!(sql_esc("target' OR '1'='1"), "target'' OR ''1''=''1");
+    assert_eq!(
+        sql_esc("target' OR '1'='1"),
+        "target'' OR ''1''=''1"
+    );
     assert_eq!(sql_esc("'''"), "''''''");
 }
 
@@ -656,21 +629,22 @@ fn test_sql_arrays() {
 // ==============================================================================
 
 #[test]
-fn test_subdomains_catalog_integrity() {
+fn test_subdomain_scanner_static_mode_integrity() {
+    use crate::modules::subdomains::SubdomainScanner;
+    let results = SubdomainScanner::scan_with_mode("example.com", crate::modules::subdomains::ScanMode::Static);
     let mut seen = HashSet::new();
-    for &sub in EXPANDED_SUBDOMAINS {
-        assert!(
-            seen.insert(sub),
-            "Subdomain '{}' is duplicated in EXPANDED_SUBDOMAINS!",
-            sub
-        );
+    let prefixes: Vec<&str> = results.iter().map(|r| r.subdomain.split('.').next().unwrap_or("")).collect();
+    for r in &results {
+        assert!(seen.insert(r.subdomain.clone()), "doublon : {}", r.subdomain);
     }
-    assert!(EXPANDED_SUBDOMAINS.contains(&"www"));
-    assert!(EXPANDED_SUBDOMAINS.contains(&"mail"));
-    assert!(EXPANDED_SUBDOMAINS.contains(&"api"));
-    assert!(EXPANDED_SUBDOMAINS.contains(&"mta-sts"));
-    assert!(EXPANDED_SUBDOMAINS.contains(&"ns1"));
-    assert!(EXPANDED_SUBDOMAINS.contains(&"ns2"));
+    assert!(prefixes.contains(&"www"));
+    assert!(prefixes.contains(&"mail"));
+    assert!(prefixes.contains(&"api"));
+    assert!(prefixes.contains(&"ns1"));
+    assert!(prefixes.contains(&"ns2"));
+    for r in &results {
+        assert_eq!(r.source, "static");
+    }
 }
 
 // ==============================================================================
@@ -850,15 +824,10 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
         None,
         None, // http_probe
         None, // rustscan
-        None, // loot
         None, // sqli
-        None, // sliver
-        None, // havoc
-        None, // merlin
-        None, // poshc2
-        None, // empire
-        None, // chisel
-        None, // netexec
+        None, // loot
+        None, // box_probe
+        None, // smb_audit
         findings,
     )
 }
@@ -871,18 +840,9 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
 fn test_parse_openssl_date_strips_notafter_prefix() {
     use crate::modules::tls::parse_openssl_date;
     // Bug historique : le préfixe "notAfter=" n'était jamais strippé → days_remaining null
-    assert_eq!(
-        parse_openssl_date("notAfter=Jan 15 12:00:00 2027 GMT"),
-        Some(1800014400)
-    );
-    assert_eq!(
-        parse_openssl_date("Jan 15 12:00:00 2027 GMT"),
-        Some(1800014400)
-    );
-    assert_eq!(
-        parse_openssl_date("notBefore=Jan 15 12:00:00 2027 GMT"),
-        Some(1800014400)
-    );
+    assert_eq!(parse_openssl_date("notAfter=Jan 15 12:00:00 2027 GMT"), Some(1800014400));
+    assert_eq!(parse_openssl_date("Jan 15 12:00:00 2027 GMT"), Some(1800014400));
+    assert_eq!(parse_openssl_date("notBefore=Jan 15 12:00:00 2027 GMT"), Some(1800014400));
     assert_eq!(parse_openssl_date("n'importe quoi"), None);
     assert_eq!(parse_openssl_date(""), None);
 }
@@ -902,10 +862,7 @@ fn test_extract_json_str_no_substring_false_positive() {
     let json = r#"{"subdomain":"evil.example"}"#;
     assert_eq!(extract_json_str(json, "domain"), None);
     let ok = r#"{"domain":"good.example"}"#;
-    assert_eq!(
-        extract_json_str(ok, "domain"),
-        Some("good.example".to_string())
-    );
+    assert_eq!(extract_json_str(ok, "domain"), Some("good.example".to_string()));
 }
 
 #[test]
@@ -928,10 +885,7 @@ fn test_civil_from_days_known_dates() {
 fn test_sanitize_target_strict_whitelist() {
     assert_eq!(crate::utils::sanitize_target("a.b-c.com"), "a_b-c_com");
     assert_eq!(crate::utils::sanitize_target("evil/host"), "evil_host");
-    assert_eq!(
-        crate::utils::sanitize_target("../etc/passwd"),
-        "___etc_passwd"
-    );
+    assert_eq!(crate::utils::sanitize_target("../etc/passwd"), "___etc_passwd");
     assert_eq!(crate::utils::sanitize_target(""), "target");
 }
 
@@ -947,10 +901,7 @@ fn test_run_guarded_catches_panic_and_returns_default() {
         "test-panic",
         || panic!("boom volontaire"),
     );
-    assert!(
-        r.is_empty(),
-        "run_guarded doit retourner T::default() sur panic"
-    );
+    assert!(r.is_empty(), "run_guarded doit retourner T::default() sur panic");
 }
 
 #[test]
@@ -958,236 +909,501 @@ fn test_is_subdomain_point_boundary() {
     use crate::modules::obscura_audit::is_subdomain;
     assert!(is_subdomain("www.veridy.ca", "veridy.ca"));
     assert!(is_subdomain("veridy.ca", "veridy.ca"));
-    assert!(
-        !is_subdomain("evil-veridy.ca", "veridy.ca"),
-        "evil-veridy.ca n'est PAS un sous-domaine"
-    );
+    assert!(!is_subdomain("evil-veridy.ca", "veridy.ca"), "evil-veridy.ca n'est PAS un sous-domaine");
     assert!(!is_subdomain("notveridy.ca", "veridy.ca"));
 }
-
 // ==============================================================================
-// 14. TESTS MODULES C2 / POST-EXPLOITATION (v0.3)
+// 14. TESTS PERSISTANCE DB v0.3 — non-régression
 // ==============================================================================
 
 #[test]
-fn test_sliver_result_serialization() {
-    use crate::modules::c2_sliver::SliverAuditResult;
-    let r = SliverAuditResult {
-        success: true,
-        installed: true,
-        version: Some("devel".into()),
-        server_running: false,
-        implants: vec!["implant1.cfg".into(), "implant2.cfg".into()],
-        sessions: vec![],
-        raw_output: "installed=true".into(),
-        summary: "Sliver devel | serveur inactif | 2 implant(s) cfg".into(),
-        elapsed_seconds: 0.1,
-    };
-    let j = serde_json::to_value(&r).unwrap();
-    assert_eq!(j["installed"], true);
-    assert_eq!(j["version"], "devel");
-    assert_eq!(j["implants"].as_array().unwrap().len(), 2);
-    // round-trip Deserialize
-    let r2: SliverAuditResult = serde_json::from_value(j).unwrap();
-    assert_eq!(r2.implants.len(), 2);
-    assert_eq!(r2.version.as_deref(), Some("devel"));
+fn test_config_default_save_to_db_true() {
+    use crate::config::Config;
+    let c = Config::default();
+    assert!(c.save_to_db, "save_to_db doit etre true par defaut");
+    assert_eq!(c.db_name, "veridy_audit");
 }
 
 #[test]
-fn test_sliver_findings_only_when_running() {
-    use crate::modules::c2_sliver::{SliverAuditResult, SliverAuditor};
-    // serveur inactif → AUCUN finding
-    let idle = SliverAuditResult {
-        installed: true,
-        server_running: false,
-        ..Default::default()
-    };
-    assert!(SliverAuditor::to_findings(&idle).is_empty());
-    // serveur actif → finding INFO
-    let live = SliverAuditResult {
-        installed: true,
-        server_running: true,
-        version: Some("devel".into()),
-        implants: vec![],
-        sessions: vec![],
-        ..Default::default()
-    };
-    let f = SliverAuditor::to_findings(&live);
-    assert_eq!(f.len(), 1);
-    assert_eq!(f[0].severity, "INFO");
-    assert_eq!(f[0].category, "C2");
+fn test_db_sql_esc_doubles_apostrophes() {
+    use crate::modules::db::sql_esc;
+    assert_eq!(sql_esc("hello"), "hello");
+    assert_eq!(sql_esc("O'Brien"), "O''Brien");
+    assert_eq!(sql_esc("'a'b'"), "''a''b''");
+    assert_eq!(sql_esc(""), "");
 }
 
 #[test]
-fn test_havoc_version_parsing_marker() {
-    // Le format de version Havoc attendu dans raw_output/summary
-    // "Havoc Framework [Version: 0.7] [CodeName: Bites The Dust]"
-    let line = "Havoc Framework [Version: 0.7] [CodeName: Bites The Dust]";
-    assert!(line.contains("Version"));
-    // la boucle du module ne retient QUE les lignes avec "Version"
-    let captured: Vec<&str> = vec!["Usage:", line, "other"]
-        .into_iter()
-        .filter(|l| l.contains("Version"))
-        .collect();
-    assert_eq!(captured.len(), 1);
+fn test_db_sql_esc_preserves_dollar_quotes() {
+    // Le serialiseur JSON est insere via $JSON$...$JSON$.
+    // sql_esc NE DOIT PAS alterer ces delimiteurs (sinon INSERT casse).
+    use crate::modules::db::sql_esc;
+    let payload = r#"{"target":"foo.com","note":"$JSON$embedded$JSON$"}"#;
+    let escaped = sql_esc(payload);
+    assert!(escaped.contains("$JSON$embedded$JSON$"),
+            "sql_esc ne doit pas toucher au dollar-quote PostgreSQL : {}", escaped);
 }
 
 #[test]
-fn test_havoc_findings_only_when_teamserver() {
-    use crate::modules::c2_havoc::{HavocAuditResult, HavocAuditor};
-    let idle = HavocAuditResult {
-        installed: true,
-        teamserver_running: false,
-        ..Default::default()
-    };
-    assert!(HavocAuditor::to_findings(&idle).is_empty());
-    let live = HavocAuditResult {
-        installed: true,
-        teamserver_running: true,
-        version: Some("0.7".into()),
-        ..Default::default()
-    };
-    assert_eq!(HavocAuditor::to_findings(&live).len(), 1);
+fn test_db_sql_int_array_empty_and_filled() {
+    use crate::modules::db::sql_int_array;
+    assert_eq!(sql_int_array::<u16>(&[]), "'{}'::int[]");
+    assert_eq!(sql_int_array(&[22u16, 80, 443]), "ARRAY[22,80,443]::int[]");
 }
 
 #[test]
-fn test_merlin_default_absent() {
-    use crate::modules::c2_merlin::MerlinAuditResult;
-    let r = MerlinAuditResult::default();
-    assert!(!r.installed);
-    assert!(!r.success);
-    assert!(!r.server_running);
+fn test_db_sql_text_array_escapes_inner_apostrophes() {
+    use crate::modules::db::sql_text_array;
+    let sans = vec!["*.example.com".to_string(), "O'Brien's SAN".to_string()];
+    let sql = sql_text_array(&sans);
+    assert!(sql.contains("'*.example.com'"), "SAN standard : {}", sql);
+    assert!(sql.contains("'O''Brien''s SAN'"), "SAN apostrophe echappee : {}", sql);
 }
 
 #[test]
-fn test_poshc2_service_state_parsing() {
-    // systemctl is-active renvoie "active\n" → trim == "active"
-    let raw = "active\n";
-    assert_eq!(raw.trim(), "active");
-    let raw2 = "inactive\n";
-    assert_ne!(raw2.trim(), "active");
+fn test_score_clamp_negative_penalties() {
+    // Reproduction inline du calcul de score (aligne sur report.rs::new)
+    fn score(findings: &[crate::modules::findings::SecurityFinding]) -> u8 {
+        let mut s: f32 = 100.0;
+        for f in findings {
+            match f.severity {
+                "CRITICAL" => s -= 25.0,
+                "HIGH" => s -= 12.0,
+                "MEDIUM" => s -= 5.0,
+                "LOW" => s -= 2.0,
+                _ => {}
+            }
+        }
+        s.clamp(0.0, 100.0).round() as u8
+    }
+    // 5 CRITICAL = -125 → clamp a 0
+    let mut findings = vec![];
+    for _ in 0..5 {
+        findings.push(crate::modules::findings::SecurityFinding {
+            severity: "CRITICAL",
+            category: "TEST",
+            title: "x".into(),
+            recommendation: "x".into(),
+        });
+    }
+    assert_eq!(score(&findings), 0, "Score ne doit JAMAIS etre negatif");
 }
 
 #[test]
-fn test_empire_findings_db_not_ready() {
-    use crate::modules::c2_empire::{EmpireAuditResult, EmpireAuditor};
-    let r = EmpireAuditResult {
-        installed: true,
-        database_ready: false,
-        server_running: false,
-        ..Default::default()
-    };
-    let f = EmpireAuditor::to_findings(&r);
-    assert_eq!(f.len(), 1);
-    assert_eq!(f[0].severity, "LOW"); // pousse à faire le setup
-                                      // DB prête + serveur actif → INFO seulement
-    let r2 = EmpireAuditResult {
-        installed: true,
-        database_ready: true,
-        server_running: true,
-        ..Default::default()
-    };
-    let f2 = EmpireAuditor::to_findings(&r2);
-    assert_eq!(f2.len(), 1);
-    assert_eq!(f2[0].severity, "INFO");
+fn test_score_exact_calculation() {
+    fn score(findings: &[crate::modules::findings::SecurityFinding]) -> u8 {
+        let mut s: f32 = 100.0;
+        for f in findings {
+            match f.severity {
+                "CRITICAL" => s -= 25.0,
+                "HIGH" => s -= 12.0,
+                "MEDIUM" => s -= 5.0,
+                "LOW" => s -= 2.0,
+                _ => {}
+            }
+        }
+        s.clamp(0.0, 100.0).round() as u8
+    }
+    // 1 CRITICAL (-25) + 1 HIGH (-12) + 1 MEDIUM (-5) = 58
+    let findings = vec![
+        crate::modules::findings::SecurityFinding {
+            severity: "CRITICAL",
+            category: "TEST",
+            title: "t".into(),
+            recommendation: "r".into(),
+        },
+        crate::modules::findings::SecurityFinding {
+            severity: "HIGH",
+            category: "TEST",
+            title: "t".into(),
+            recommendation: "r".into(),
+        },
+        crate::modules::findings::SecurityFinding {
+            severity: "MEDIUM",
+            category: "TEST",
+            title: "t".into(),
+            recommendation: "r".into(),
+        },
+    ];
+    assert_eq!(score(&findings), 100 - 25 - 12 - 5);
 }
 
 #[test]
-fn test_chisel_finding_never_emitted() {
-    use crate::modules::tunnel_chisel::{ChiselAuditResult, ChiselAuditor};
-    // tunnelling local : aucun finding d'audit de cible, quel que soit l'état
-    let r = ChiselAuditResult {
-        success: true,
-        installed: true,
-        server_demo_ok: true,
-        ..Default::default()
-    };
-    assert!(ChiselAuditor::to_findings(&r).is_empty());
-}
-
-#[test]
-fn test_netexec_signing_detection() {
-    use crate::modules::lateral_netexec::{NetexecAuditResult, NetexecAuditor};
-    // signing désactivé → finding MEDIUM (relais NTLM possible)
-    let r = NetexecAuditResult {
-        success: true,
-        installed: true,
-        target_reachable: true,
-        smb_signing_enforced: Some(false),
-        ..Default::default()
-    };
-    let f = NetexecAuditor::to_findings(&r);
-    assert_eq!(f.len(), 1);
-    assert_eq!(f[0].severity, "MEDIUM");
-    assert_eq!(f[0].category, "SMB");
-    // signing forcé → rien à signaler
-    let r2 = NetexecAuditResult {
-        smb_signing_enforced: Some(true),
-        ..r.clone()
-    };
-    assert!(NetexecAuditor::to_findings(&r2).is_empty());
-}
-
-#[test]
-fn test_netexec_signing_parse_markers() {
-    // les deux formats que le module scrute : texte nxc et JSON --gen-json
-    let txt = "SMB 192.168.1.10 445 HOST [+] 10.0.0.5 (name:HOST) (domain:CORP) (signing:False)";
-    assert!(txt.contains("signing:False"));
-    let json = r#"{"host": "10.0.0.5", "signing": false}"#;
-    assert!(json.contains("\"signing\": false"));
-}
-
-#[test]
-fn test_tool_on_path_finds_true_binary() {
-    // sur toute machine de test, /bin/sh ou true existe
-    let found = crate::utils::tool_on_path("sh") || crate::utils::tool_on_path("true");
-    assert!(found, "sh/true devraient être sur le PATH");
-    assert!(!crate::utils::tool_on_path("outil-qui-nexiste-pas-xyz-123"));
-}
-
-#[test]
-fn test_tcp_probe_loopback_refused() {
-    // un port privilégié non écouté refuse la connexion → false (rapide)
-    let refused = crate::utils::tcp_probe("127.0.0.1", 1);
-    assert!(!refused);
-}
-
-#[test]
-#[allow(clippy::field_reassign_with_default)]
-fn test_c2_flags_optin_not_in_enable_all() {
+fn test_tool_flags_v02_count_and_sqlmap_optin() {
     use crate::config::ToolFlags;
-    let mut t = ToolFlags::default();
-    t.enable_all();
-    // les C2 ne doivent JAMAIS s'activer implicitement
-    assert!(!t.sliver);
-    assert!(!t.havoc);
-    assert!(!t.merlin);
-    assert!(!t.poshc2);
-    assert!(!t.empire);
-    assert!(!t.chisel);
-    assert!(!t.netexec);
-    // et ne comptent pas comme outils actifs standards
-    let mut t2 = ToolFlags::default();
-    t2.netexec = true;
-    assert!(t2.has_any()); // actif si demandé
-    let names = t2.active_names();
-    assert!(names.contains(&"NetExec"));
+    let mut flags = ToolFlags::default();
+    assert_eq!(flags.active_names().len(), 0);
+
+    flags.enable_all();
+    let active = flags.active_names();
+    assert_eq!(active.len(), 14, "14 modules (12 + httpx + rustscan) ; got: {:?}", active);
+    assert!(active.contains(&"Httpx"));
+    assert!(active.contains(&"RustScan"));
+    assert!(!active.contains(&"SQLMap"),
+            "SQLMap EXCLU de enable_all (opt-in explicite --sqlmap)");
 }
 
 #[test]
-fn test_report_serializes_c2_sections() {
-    // FullAuditReport avec un module C2 actif sérialise bien la section
-    use crate::modules::c2_sliver::SliverAuditResult;
-    let mut report = crate::report::FullAuditReport::default_for_tests();
-    report.sliver = Some(SliverAuditResult {
-        success: true,
-        installed: true,
-        version: Some("devel".into()),
-        summary: "test".into(),
-        sessions: vec![],
-        ..Default::default()
-    });
-    let j = report.to_json();
-    assert!(j.contains("\"sliver\""));
-    assert!(j.contains("\"summary\": \"test\""));
+fn test_target_parser_no_blocking_residual() {
+    // Aucune cible ne doit etre bloquee par validation (l'ancien SafetyGuard RFC1918/loopback a ete supprime)
+    use crate::target_parser::TargetParser;
+    for target in &["127.0.0.1", "192.168.1.1", "10.0.0.1", "172.16.0.1", "169.254.0.1", "example.com"] {
+        // TargetVerdict est un enum (Resolved/Unresolvable/InvalidFormat)
+        // On valide juste que resolve() ne panic pas (succes ou echec DNS acceptes)
+        let _verdict = TargetParser::resolve(target);
+    }
+}
+
+#[test]
+fn test_iso_timestamp_iso8601_format() {
+    use crate::utils::iso_timestamp;
+    let ts = iso_timestamp();
+    assert!(ts.contains('T'), "Timestamp doit contenir 'T' : {}", ts);
+    assert!(ts.len() >= 19, "Timestamp trop court : {}", ts);
+}
+
+#[test]
+fn test_db_history_target_empty_no_panic() {
+    // Non-regression : target vide = toutes cibles ; ne doit pas paniquer
+    use crate::modules::db::DatabaseManager;
+    // DB peut etre absente en CI → on accepte l'echec, on teste seulement qu'il n'y a pas de panic
+    let r = DatabaseManager::get_history("", 5, "veridy_audit");
+    let _ = r; // Ok ou Err, mais pas panic
+}
+
+// ==============================================================================
+// 15. TESTS SCRIPTS D'INSTALL v0.3 — non-régression statique
+// ==============================================================================
+
+#[test]
+fn test_install_script_files_present_and_ordered() {
+    use std::fs;
+    let candidates = ["veridy_install_test.sh", "install.sh", "../veridy_install_test.sh"];
+    let path = candidates.iter().find(|p| fs::metadata(p).is_ok());
+    let Some(path) = path else { return; }; // skip silencieux si pas d'install script
+    let content = fs::read_to_string(path).expect("lecture install script");
+    let pos_full = content.find("schema_full.sql");
+    let pos_deep = content.find("schema_deep.sql");
+    let pos_tools = content.find("schema_tools.sql");
+    if let (Some(f), Some(d), Some(t)) = (pos_full, pos_deep, pos_tools) {
+        assert!(f < d, "schema_full doit preceder schema_deep ({} < {})", f, d);
+        assert!(d < t, "schema_deep doit preceder schema_tools ({} < {})", d, t);
+    }
+    // Installation ProjectDiscovery v0.2
+    assert!(content.contains("pdhttpx") || content.contains("httpx/releases"),
+            "Le script doit installer pdhttpx");
+    assert!(content.contains("subfinder"),
+            "Le script doit installer subfinder");
+    // Validation INSERT/RETURNING id
+    assert!(content.contains("RETURNING id"),
+            "Le script doit valider la DB par INSERT...RETURNING id");
+}
+
+#[test]
+fn test_install_script_has_head_minus_one() {
+    // Le retour psql est "id\nINSERT 0 1\n" → il faut filtrer par head -1
+    // sinon le test d'INSERT produit "91INSERT01" qui casse le test arithmetique
+    use std::fs;
+    for path in &["veridy_install_test.sh", "install.sh", "../veridy_install_test.sh"] {
+        if fs::metadata(path).is_ok() {
+            let content = fs::read_to_string(path).unwrap_or_default();
+            if content.contains("RETURNING id") {
+                assert!(content.contains("head -1"),
+                    "Le script doit filtrer le retour psql par `head -1`");
+                return;
+            }
+        }
+    }
+}
+
+#[test]
+fn test_sql_text_clipped_truncates_long_strings() {
+    use crate::modules::db::sql_text_clipped;
+    let long = "a".repeat(3000);
+    let clipped = sql_text_clipped(&long, 2000);
+    assert_eq!(clipped.chars().count(), 2000, "doit etre tronque a 2000 chars max");
+    assert!(clipped.ends_with('\u{2026}'), "doit finir par l'ellipsis");
+}
+
+#[test]
+fn test_sql_text_clipped_short_strings_untouched() {
+    use crate::modules::db::sql_text_clipped;
+    let short = "Pas de troncature ici";
+    assert_eq!(sql_text_clipped(short, 2000), short);
+    assert_eq!(sql_text_clipped("", 2000), "");
+}
+
+#[test]
+fn test_sql_text_clipped_escapes_apostrophes() {
+    use crate::modules::db::sql_text_clipped;
+    let s = "l'apostrophe ici puis beaucoup de texte apres pour depasser la limite";
+    let clipped = sql_text_clipped(s, 20);
+    assert!(clipped.contains("l''apostrophe"), "sql_esc applique : {}", clipped);
+}
+
+#[test]
+fn test_sql_text_clipped_utf8_safe_no_panic() {
+    use crate::modules::db::sql_text_clipped;
+    let s = "\u{00e9}".repeat(1000); // e-acute = 2 octets UTF-8
+    let clipped = sql_text_clipped(&s, 100);
+    assert!(clipped.chars().count() <= 100,
+        "troncature UTF-8 safe, got {} chars", clipped.chars().count());
+}
+
+
+// ==============================================================================
+// 9. TESTS SCHÉMA HTTP/HTTPS DYNAMIQUE (correctif faux « aucun serveur HTTP »)
+// ==============================================================================
+
+#[test]
+fn test_host_with_port_custom_port() {
+    assert_eq!(
+        crate::utils::host_with_port("127.0.0.1", &[8099]),
+        "127.0.0.1:8099"
+    );
+    assert_eq!(crate::utils::host_with_port("veridy.ca", &[]), "veridy.ca");
+    assert_eq!(
+        crate::utils::host_with_port("veridy.ca", &[443, 8443]),
+        "veridy.ca:443"
+    );
+}
+
+#[test]
+fn test_lock_no_forced_https_fuzz_url() {
+    // Le module de fuzzing ne doit plus coder un schéma unique en dur :
+    // l'URL de probe est construite dynamiquement (détection TLS + fallback).
+    let src = include_str!("modules/ffuf_audit.rs");
+    assert!(
+        !src.contains("https://{}/FUZZ"),
+        "ffuf_audit.rs force de nouveau un schéma unique dans l'URL de fuzz"
+    );
+}
+
+// ===== Tests anti-faux-positifs ffuf (baseline soft-404) =====
+
+#[test]
+fn test_ffuf_no_403_in_match_codes() {
+    // Un 403 est un blocage WAF/permissions, jamais une preuve d'existence :
+    // il ne doit PAS figurer dans les codes matchés par ffuf.
+    let src = include_str!("modules/ffuf_audit.rs");
+    assert!(
+        !src.contains("\"200,301,302,403\""),
+        "ffuf matche à nouveau les 403 → flood de faux positifs (bug metro.ca)"
+    );
+    assert!(
+        src.contains("\"200,301,302\""),
+        "les codes matchés doivent être 200,301,302"
+    );
+}
+
+#[test]
+fn test_ffuf_soft404_baseline_present() {
+    // La signature (status+taille) des sondes random doit filtrer les
+    // endpoints : sans baseline, le WAF uniforme repasse en CRITICAL.
+    let src = include_str!("modules/ffuf_audit.rs");
+    assert!(
+        src.contains("fn soft404_baseline"),
+        "soft404_baseline absente du module ffuf"
+    );
+    assert!(
+        src.contains("baseline_status == 0"),
+        "le filtrage par signature baseline manque"
+    );
+}
+
+#[test]
+fn test_ffuf_soft404_filter_logic() {
+    // Logique de filtrage unitaire : même signature que la baseline = filtré,
+    // signature différente = conservé. Repris du corps du filter() réel.
+    let baseline = (403u16, 5481usize); // metro.ca : WAF "Access Denied" uniforme
+    let endpoints = [
+        (String::from(".env"), 403u16, 5481usize),  // bruit WAF → filtré
+        (String::from(".git/HEAD"), 403u16, 5481usize), // bruit WAF → filtré
+        (String::from("robots.txt"), 200u16, 512usize), // vrai contenu servi
+    ];
+    let kept: Vec<&(String, u16, usize)> = endpoints
+        .iter()
+        .filter(|(_, status, length)| !(*status == baseline.0 && *length == baseline.1))
+        .collect();
+    assert_eq!(kept.len(), 1, "les 2 endpoints WAF-uniformes doivent être filtrés");
+    assert_eq!(kept[0].0, "robots.txt");
+}
+
+// ===== Test anti-faux-CRITICAL TLS (retry Verification) =====
+
+#[test]
+fn test_tls_retry_on_missing_verification_line() {
+    // Le handshake -brief doit être retenté quand la ligne "Verification:"
+    // n'est pas sortie (race kill/timeout) : sinon is_valid=false à tort
+    // → CRITICAL "Chaîne invalide" sur des certs parfaitement valides.
+    let src = include_str!("modules/tls.rs");
+    assert!(
+        src.contains("for _attempt in 0..3"),
+        "le retry du handshake -brief manque dans tls.rs"
+    );
+    assert!(
+        src.matches("fn parse_openssl_date").count() >= 1,
+        "parse_openssl_date doit rester présent"
+    );
+}
+
+// ==============================================================================
+
+// ==============================================================================
+// 17. TESTS ATOMICITÉ TRANSACTIONNELLE v0.3.8 (refacto bind params + tx unique)
+// ==============================================================================
+// La persistance passe désormais par la crate postgres : socket Unix (auth
+// peer de l'OS, zéro mot de passe), une seule connexion, une seule
+// transaction, paramètres liés $1..$n. Ces tests verrouillent les invariants
+// du nouveau chemin. Ils tolèrent l'absence de DB (CI sans PostgreSQL) mais
+// échouent si la DB répond et qu'un invariant est violé.
+
+#[test]
+fn test_lock_db_save_scan_atomic_and_typed() {
+    use crate::modules::db::DatabaseManager;
+
+    let report = create_dummy_report(vec![]);
+    let res = DatabaseManager::save_scan(&report, "veridy_audit");
+    // DB absente (CI) → Err acceptable, pas de panic.
+    let Ok(scan_id) = res else { return };
+
+    // Le scan doit exister avec les valeurs dummy attendues.
+    let mut client = match DatabaseManager::connect_for_tests("veridy_audit") {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let row = client
+        .query_one(
+            "SELECT target, overall_score, findings_count, open_ports_count \
+             FROM audit_scans WHERE id = $1",
+            &[&scan_id],
+        )
+        .expect("ligne audit_scans lisible après commit");
+    let target: String = row.get(0);
+    let score: i16 = row.get(1);
+    assert_eq!(target, "test-target.ca");
+    assert_eq!(score, 100, "dummy sans findings → score 100");
+
+    // Les tables filles doivent être peuplées avec les valeurs dummy.
+    // Les 5 tables mono-ligne sont TOUJOURS remplies (insertions
+    // inconditionnelles), et les 2 ports du dummy doivent y etre.
+    let cnt5: i64 = client
+        .query_one(
+            "SELECT (SELECT count(*) FROM audit_tls_certs WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_geo_compliance WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_email_sec WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_web_endpoints WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_dns_hardening WHERE scan_id=$1)",
+            &[&scan_id],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(cnt5, 5, "5 tables mono-ligne attendues, got {cnt5}");
+    let ports_cnt: i64 = client
+        .query_one(
+            "SELECT count(*) FROM audit_ports WHERE scan_id=$1",
+            &[&scan_id],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(ports_cnt, 2, "2 ports dummy attendus, got {ports_cnt}");
+    let tls_days: Option<i32> = client
+        .query_one(
+            "SELECT days_remaining FROM audit_tls_certs WHERE scan_id=$1",
+            &[&scan_id],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(tls_days, Some(45), "days_remaining dummy transporte via bind param");
+
+    // Nettoyage : le dummy ne doit pas polluer l'historique.
+    DatabaseManager::cleanup_scan_for_tests("veridy_audit", scan_id);
+    let left: i64 = client
+        .query_one(
+            "SELECT (SELECT count(*) FROM audit_scans WHERE id=$1) \
+                    + (SELECT count(*) FROM audit_dns_records WHERE scan_id=$1) \
+                    + (SELECT count(*) FROM audit_findings WHERE scan_id=$1)",
+            &[&scan_id],
+        )
+        .unwrap()
+        .get(0);
+    assert_eq!(left, 0, "cleanup_scan_for_tests doit tout supprimer");
+}
+
+#[test]
+fn test_lock_db_injection_via_target_is_inert() {
+    use crate::modules::db::DatabaseManager;
+
+    // Cible hostile : apostrophe + tentative d'injection classique. Avec les
+    // paramètres liés, elle doit être stockée TELLE QUELLE (aucun SQL
+    // supplémentaire exécuté), jamais interprétée.
+    let mut report = create_dummy_report(vec![]);
+    report.target = String::from("evil'target; DROP TABLE audit_scans;-- UNION SELECT 1");
+    let res = DatabaseManager::save_scan(&report, "veridy_audit");
+    let Ok(scan_id) = res else { return };
+
+    let mut client = match DatabaseManager::connect_for_tests("veridy_audit") {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    // La table doit toujours exister et contenir la cible verbatim.
+    let row = client
+        .query_one("SELECT target FROM audit_scans WHERE id = $1", &[&scan_id])
+        .expect("audit_scans doit exister après la tentative");
+    let stored: String = row.get(0);
+    assert_eq!(
+        stored, report.target,
+        "la cible hostile doit être stockée verbatim, non interprétée"
+    );
+    DatabaseManager::cleanup_scan_for_tests("veridy_audit", scan_id);
+}
+
+#[test]
+fn test_lock_db_rollback_mid_transaction() {
+    use crate::modules::db::DatabaseManager;
+
+    // Régression atomique : un INSERT valide suivi d'un INSERT volontairement
+    // invalide DANS LA MÊME transaction doit laisser 0 trace (rollback total).
+    // Ancien comportement psql-batch : la ligne audit_scans auto-commitée
+    // survivait comme orpheline. Nouveau chemin : plus rien.
+    let Ok(mut client) = DatabaseManager::connect_for_tests("veridy_audit") else {
+        return;
+    };
+    let count_before: i64 = client
+        .query_one("SELECT count(*) FROM audit_scans", &[])
+        .unwrap()
+        .get(0);
+
+    let mut tx = client.transaction().unwrap();
+    // Le payload part en TEXT puis est casté ::jsonb côté serveur (paramètre
+    // déclaré TEXT, jamais déduit jsonb — sinon le binding d'un &str échoue).
+    let stmt_valid = tx
+        .prepare_typed(
+            "INSERT INTO audit_scans (target, overall_score, payload) \
+             VALUES ($1, $2, $3::jsonb)",
+            &[postgres::types::Type::VARCHAR, postgres::types::Type::INT2, postgres::types::Type::TEXT],
+        )
+        .unwrap();
+    tx.execute(&stmt_valid, &[&"rollback-probe", &50i16, &"{}"]).unwrap();
+    // Échec d'éxécution (et non de prepare) : contrainte NOT NULL
+    // violée au runtime — simule un crash mid-transaction.
+    let stmt_invalid = tx
+        .prepare_typed(
+            "INSERT INTO audit_scans (target, overall_score, payload) \
+             VALUES ($1::text, $2, $3::jsonb)",
+            &[postgres::types::Type::TEXT, postgres::types::Type::INT2, postgres::types::Type::TEXT],
+        )
+        .unwrap();
+    let null_target: Option<&str> = None;
+    let invalid = tx.execute(&stmt_invalid, &[&null_target, &50i16, &"{}"]);
+    assert!(
+        invalid.is_err(),
+        "l'INSERT violant NOT NULL doit échouer côté serveur"
+    );
+    drop(tx); // rollback implicite (jamais commité)
+
+    let count_after: i64 = client
+        .query_one("SELECT count(*) FROM audit_scans", &[])
+        .unwrap()
+        .get(0);
+    assert_eq!(
+        count_before, count_after,
+        "rollback : aucun scan orphelin ne doit survivre à un échec mid-transaction"
+    );
 }

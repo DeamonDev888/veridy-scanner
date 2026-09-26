@@ -1,7 +1,8 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct NmapPortService {
     pub port: u16,
     pub protocol: String,
@@ -12,7 +13,8 @@ pub struct NmapPortService {
     pub scripts: Vec<(String, String)>, // (script_id, output)
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct NmapAuditResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -88,7 +90,7 @@ impl NmapAuditor {
         );
 
         NmapAuditResult {
-            success: true,
+            success: output.status.success(),
             elapsed_seconds: elapsed,
             services,
             raw_output: xml_str,

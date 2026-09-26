@@ -1,9 +1,8 @@
-mod config;
+pub mod config;
 mod modules;
 mod orchestrator;
 mod report;
 mod target_parser;
-mod ui;
 mod utils;
 
 #[cfg(test)]
@@ -61,20 +60,7 @@ fn main() {
         }
     };
 
-    if !config.json_mode {
-        println!(
-            ">>> Lancement de l'audit approfondi Veridy pour la cible : {}",
-            config.target
-        );
-        println!(">>> IPs résolues : {:?}", ips);
-        println!(">>> Exécution parallèle des modules (GéoIP, DNS, 75+ Ports, HTTP, TLS, Sous-domaines, Endpoints)...");
-        if config.tools.has_any() {
-            println!(
-                ">>> [KALI 360° ORCHESTRATION] Outils activés en arrière-plan : {}",
-                config.tools.active_names().join(", ")
-            );
-        }
-    }
+    // Le TUI plein écran gère l'affichage direct via ProgressTracker
 
     // 2. Exécution coordonnée via l'Orchestrateur
     let report = AuditOrchestrator::run(&config, &first_ip);

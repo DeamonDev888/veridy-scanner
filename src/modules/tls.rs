@@ -1,5 +1,7 @@
+
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct TlsAuditResult {
     pub domain: String,
     pub protocol: Option<String>,
@@ -53,47 +55,65 @@ impl TlsAuditor {
         let connect_target = format!("{}:443", host_ip);
         let sni_args = ["-servername", domain];
 
-        // 1. Négociation moderne par défaut
-        if let Some(output) = crate::utils::run_tool(
-            "openssl",
-            &[
-                "s_client",
-                "-connect",
-                &connect_target,
-                sni_args[0],
-                sni_args[1],
-                "-brief",
-            ],
-            10,
-        ) {
-            // -brief écrit la négociation sur STDERR : fusion des deux flux
-            let mut stdout = String::from_utf8_lossy(&output.stdout).to_string();
-            stdout.push_str(&String::from_utf8_lossy(&output.stderr));
-            for line in stdout.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("Protocol version:") {
-                    let proto = trimmed.split(':').nth(1).map(|s| s.trim().to_string());
-                    if let Some(ref p) = proto {
-                        if p.contains("1.3") {
-                            result.supports_tls13 = true;
-                        } else if p.contains("1.2") {
-                            result.supports_tls12 = true;
+        // 1. Négociation moderne par défaut — avec RETRY : si la ligne
+        // "Verification:" manque de la sortie fusionnée stdout+stderr (race
+        // kill/timeout, serveur lent), is_valid resterait false à tort et
+        // déclencherait le finding CRITICAL "Chaîne de confiance invalide"
+        // sur des cibles parfaitement valides (bug vu sur example.com et
+        // veridy.ca). On relance le handshake jusqu'à obtenir le verdict.
+        let mut verification_seen = false;
+        for _attempt in 0..3 {
+            if let Some(output) = crate::utils::run_tool(
+                "openssl",
+                &[
+                    "s_client",
+                    "-connect",
+                    &connect_target,
+                    sni_args[0],
+                    sni_args[1],
+                    "-brief",
+                ],
+                10,
+            ) {
+                // -brief écrit la négociation sur STDERR : fusion des deux flux
+                let mut stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                stdout.push_str(&String::from_utf8_lossy(&output.stderr));
+                let mut found_this_pass = false;
+                for line in stdout.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("Protocol version:") {
+                        let proto = trimmed.split(':').nth(1).map(|s| s.trim().to_string());
+                        if let Some(ref p) = proto {
+                            if p.contains("1.3") {
+                                result.supports_tls13 = true;
+                            } else if p.contains("1.2") {
+                                result.supports_tls12 = true;
+                            }
+                        }
+                        result.protocol = proto;
+                    } else if trimmed.starts_with("Ciphersuite:") {
+                        result.cipher = trimmed.split(':').nth(1).map(|s| s.trim().to_string());
+                    } else if trimmed.starts_with("Verification:") {
+                        found_this_pass = true;
+                        if trimmed.contains("OK") {
+                            result.is_valid = true;
+                        } else {
+                            result
+                                .issues
+                                .push(format!("Erreur de chaîne de confiance : {}", trimmed));
                         }
                     }
-                    result.protocol = proto;
-                } else if trimmed.starts_with("Ciphersuite:") {
-                    result.cipher = trimmed.split(':').nth(1).map(|s| s.trim().to_string());
-                } else if trimmed.starts_with("Verification:") {
-                    if trimmed.contains("OK") {
-                        result.is_valid = true;
-                    } else {
-                        result
-                            .issues
-                            .push(format!("Erreur de chaîne de confiance : {}", trimmed));
-                    }
                 }
+                verification_seen = found_this_pass;
+                if found_this_pass {
+                    break;
+                }
+            } else {
+                // openssl injoignable/network KO → inutile de boucler
+                break;
             }
         }
+        let _ = verification_seen;
 
         // 2. Vérification de la présence de protocoles obsolètes (TLS 1.0, 1.1)
         if let Some(out) = crate::utils::run_tool(
@@ -153,11 +173,7 @@ impl TlsAuditor {
         // 3. Inspection détaillée du certificat x509
         // On récupère le cert PEM via openssl s_client, puis on parse avec openssl x509 sur un fichier tmp
         let pid = std::process::id();
-        let cert_pem = format!(
-            "/tmp/tls_cert_{}_{}.pem",
-            crate::utils::sanitize_target(domain),
-            pid
-        );
+        let cert_pem = format!("/tmp/tls_cert_{}_{}.pem", crate::utils::sanitize_target(domain), pid);
         if let Some(out) = crate::utils::run_tool(
             "openssl",
             &[
@@ -177,19 +193,7 @@ impl TlsAuditor {
 
         if let Some(output) = crate::utils::run_tool(
             "openssl",
-            &[
-                "x509",
-                "-noout",
-                "-subject",
-                "-issuer",
-                "-dates",
-                "-ext",
-                "subjectAltName",
-                "-checkend",
-                "0",
-                "-in",
-                &cert_pem,
-            ],
+            &["x509", "-noout", "-subject", "-issuer", "-dates", "-ext", "subjectAltName", "-checkend", "0", "-in", &cert_pem],
             10,
         ) {
             let _ = std::fs::remove_file(&cert_pem);
@@ -232,9 +236,7 @@ impl TlsAuditor {
                 let days = ((end_epoch - now_epoch) / 86400) as i32;
                 result.days_remaining = Some(days);
                 if days <= 0 {
-                    result
-                        .issues
-                        .push("CRITIQUE : Le certificat TLS a expiré !".into());
+                    result.issues.push("CRITIQUE : Le certificat TLS a expiré !".into());
                 } else if days < 15 {
                     result.issues.push(format!(
                         "AVERTISSEMENT : Le certificat expire bientôt (dans {} jours) !",
@@ -266,19 +268,13 @@ pub(crate) fn parse_openssl_date(s: &str) -> Option<i64> {
         .trim_start_matches("notAfter=")
         .trim_start_matches("notBefore=")
         .trim();
-    let months = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
+    let months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     let parts: Vec<&str> = s.split_whitespace().collect();
-    if parts.len() < 4 {
-        return None;
-    }
+    if parts.len() < 4 { return None; }
     let month = months.iter().position(|m| *m == parts[0])? as i64 + 1;
     let day: i64 = parts[1].parse().ok()?;
     let time: Vec<&str> = parts[2].split(':').collect();
-    if time.len() != 3 {
-        return None;
-    }
+    if time.len() != 3 { return None; }
     let h: i64 = time[0].parse().ok()?;
     let m: i64 = time[1].parse().ok()?;
     let sec: i64 = time[2].parse().ok()?;

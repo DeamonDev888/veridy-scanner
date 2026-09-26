@@ -1,14 +1,16 @@
 use crate::modules::findings::SecurityFinding;
 use std::time::Instant;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct LookalikeDomain {
     pub domain: String,
     pub fuzzer: String,
     pub ip: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct BrandSecResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -23,11 +25,7 @@ impl BrandSecAuditor {
     pub fn audit(target: &str) -> BrandSecResult {
         let start = Instant::now();
 
-        let output = match crate::utils::run_tool(
-            "dnstwist",
-            &["--registered", "-f", "json", target],
-            180,
-        ) {
+        let output = match crate::utils::run_tool("dnstwist", &["--registered", "-f", "json", target], 180) {
             Some(o) => o,
             None => {
                 return BrandSecResult {

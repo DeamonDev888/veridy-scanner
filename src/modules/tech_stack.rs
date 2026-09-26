@@ -2,7 +2,8 @@ use crate::modules::findings::SecurityFinding;
 use std::fs;
 use std::time::Instant;
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct TechStackResult {
     pub success: bool,
     pub elapsed_seconds: f32,
@@ -19,13 +20,13 @@ pub struct TechStackAuditor;
 impl TechStackAuditor {
     pub fn audit(target: &str) -> TechStackResult {
         let start = Instant::now();
-        let target_url = format!("https://{}", target);
+        // Schéma détecté : les box HTB servent souvent du HTTP pur sur un port
+        // exotique — l ancien https:// forcé rendait l outil aveugle (0 findings).
+        let hostport = crate::utils::host_with_port(target, &[]);
+        let scheme_order = crate::modules::scheme_detect::detect_scheme(&hostport).order;
+        let target_url = format!("{}://{}", scheme_order[0], hostport);
         let pid = std::process::id();
-        let tmp_output = format!(
-            "/tmp/whatweb_{}_{}.json",
-            crate::utils::sanitize_target(target),
-            pid
-        );
+        let tmp_output = format!("/tmp/whatweb_{}_{}.json", crate::utils::sanitize_target(target), pid);
 
         let output = match crate::utils::run_tool(
             "whatweb",

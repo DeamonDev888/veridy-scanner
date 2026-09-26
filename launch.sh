@@ -386,14 +386,6 @@ show_stats() {
     sudo -u postgres psql -d "$DB_NAME" -c \
         "SELECT title, severity, category, COUNT(*) as occurences FROM audit_findings GROUP BY title, severity, category ORDER BY CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'MEDIUM' THEN 3 WHEN 'LOW' THEN 4 ELSE 5 END, occurences DESC LIMIT 10;"
 
-    echo -e "\n${C_CYAN}${C_BOLD}4. MATRICE LOOT — FICHIERS SENSIBLES EXFILTRÉS (--loot) :${C_RST}"
-    sudo -u postgres psql -d "$DB_NAME" -c \
-        "SELECT COUNT(*) AS artefacts, COALESCE(SUM(size_bytes),0) AS volume_octets, COUNT(DISTINCT scan_id) AS scans_avec_loot FROM audit_loot;"
-    sudo -u postgres psql -d "$DB_NAME" -c \
-        "SELECT severity, category, COUNT(*) AS nb, ROUND(COALESCE(SUM(size_bytes),0)/1024.0,1) AS total_ko FROM audit_loot GROUP BY severity, category ORDER BY nb DESC;"
-    sudo -u postgres psql -d "$DB_NAME" -c \
-        "SELECT s.target, COUNT(l.id) AS artefacts, ROUND(COALESCE(SUM(l.size_bytes),0)/1024.0,1) AS volume_ko, MAX(l.timestamp) AS dernier_loot FROM audit_loot l JOIN audit_scans s ON s.id = l.scan_id GROUP BY s.target ORDER BY artefacts DESC LIMIT 10;"
-
     echo ""
     if [[ "$INTERACTIVE_MODE" == "1" ]]; then
         read -rp "Appuyez sur [Entrée] pour continuer..."
@@ -500,7 +492,7 @@ show_subdomains() {
 # ------------------------------------------------------------------------------
 # Show Geo Records
 # ------------------------------------------------------------------------------
-show_compliance() {
+show_geolocation() {
     show_cursor
     show_banner
     echo -e "${C_BOLD}${C_YELLOW}[*] REGISTRE GÉOLOCALISATION DES HÉBERGEMENTS :${C_RST}\n"
@@ -1635,7 +1627,7 @@ interactive_tui() {
                             2) show_scan_detail_tui ;;
                             3) show_findings_tui ;;
                             4) show_subdomains ;;
-                            5) show_compliance ;;
+                            5) show_geolocation ;;
                             6) show_stats ;;
                             7) open_psql_shell ;;
                         esac
@@ -1713,7 +1705,7 @@ EXPLORATION DE LA BASE POSTGRESQL (12 TABLES):
   --scan <ID>               Inspecter les détails techniques complets d'un scan
   --findings [SEVERITE]     Lister les constats (ex: --findings CRITICAL ou HIGH)
   --subdomains              Lister les sous-domaines découverts et cartographiés
-  --compliance              Afficher le registre de géolocalisation et juridiction d'hébergement
+  --geolocation             Afficher le registre de géolocalisation et juridiction d'hébergement
   --psql                    Ouvrir un shell SQL interactif sur la base veridy_audit
 
 GESTION DES PROCESSUS & BATCHS:
@@ -1931,8 +1923,8 @@ while [[ $# -gt 0 ]]; do
             show_subdomains
             exit 0
             ;;
-        --compliance)
-            show_compliance
+        --geolocation)
+            show_geolocation
             exit 0
             ;;
         --psql)

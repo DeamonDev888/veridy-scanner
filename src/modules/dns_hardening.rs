@@ -1,7 +1,8 @@
 use std::net::IpAddr;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct DnsHardeningResult {
     pub ip_tested: String,
     pub is_open_resolver_risk: bool,

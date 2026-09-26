@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::process::Command;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize)]
 pub struct HttpHeaderEntry {
     pub name: String,
     pub value: String,
@@ -10,7 +11,8 @@ pub struct HttpHeaderEntry {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize)]
 pub struct CookieAuditEntry {
     pub name: String,
     pub secure: bool,
@@ -19,7 +21,8 @@ pub struct CookieAuditEntry {
 }
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, Default, serde::Serialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize)]
 pub struct HttpAuditResult {
     pub target_url: String,
     pub http_status: u16,
@@ -48,10 +51,7 @@ pub struct HttpAuditor;
 /// (libellé complet pour `missing`, clé minuscule de la HashMap `headers`).
 /// Le nom affiché dans `all_headers` est le libellé sans suffixe " (...)".
 const SECURITY_HEADERS: [(&str, &str); 6] = [
-    (
-        "Strict-Transport-Security (HSTS)",
-        "strict-transport-security",
-    ),
+    ("Strict-Transport-Security (HSTS)", "strict-transport-security"),
     ("Content-Security-Policy (CSP)", "content-security-policy"),
     ("X-Frame-Options", "x-frame-options"),
     ("X-Content-Type-Options", "x-content-type-options"),
@@ -60,7 +60,9 @@ const SECURITY_HEADERS: [(&str, &str); 6] = [
 ];
 
 impl HttpAuditor {
-    pub fn audit(domain: &str) -> HttpAuditResult {
+    pub fn audit(domain: &str, custom_ports: &[u16]) -> HttpAuditResult {
+        // Hôte[:port] — port explicite via --ports, sinon 80/443 implicites.
+        let hostport = crate::utils::host_with_port(domain, custom_ports);
         let mut missing = Vec::new();
         let mut headers = HashMap::new();
         let mut raw_headers_list = Vec::new();
@@ -68,32 +70,70 @@ impl HttpAuditor {
         let mut status_code = 0;
         let mut redirects_to_https = false;
 
-        // 1. Test de redirection HTTP -> HTTPS sur le port 80
-        let http_url = format!("http://{}/", domain);
-        if let Ok(output) = Command::new("curl")
-            .args(["-s", "-I", "-L", "--max-time", "4", &http_url])
-            .output()
-        {
-            let out = String::from_utf8_lossy(&output.stdout);
-            for line in out.lines() {
-                let lower = line.to_lowercase();
-                if lower.starts_with("location:") {
-                    if let Some((_, val)) = line.split_once(':') {
-                        if val.trim().to_lowercase().starts_with("https://") {
-                            redirects_to_https = true;
-                        }
+        // 1. Test de redirection HTTP -> HTTPS (port 80 ou port spécifié)
+        //    Natif TcpStream — zéro spawn curl (gain ~150 ms + pas de PATH).
+        if let Some((host, port)) = crate::utils::split_host_port(&hostport) {
+            if let Some(h) = crate::modules::nethttp::head(
+                &host,
+                port,
+                "/",
+                None,
+                std::time::Duration::from_secs(4),
+            ) {
+                if let Some(loc) = h.headers.get("location") {
+                    if loc.to_lowercase().starts_with("https://") {
+                        redirects_to_https = true;
                     }
                 }
             }
         }
 
-        // 2. Récupération des en-têtes et cookies HTTPS sur le port 443
-        let https_url = format!("https://{}/", domain);
-        if let Ok(output) = Command::new("curl")
-            .args(["-s", "-I", "-L", "--max-time", "5", &https_url])
-            .output()
+        // 2. Récupération des en-têtes et cookies : HTTPS d'abord, fallback
+        //    HTTP — une cible sans TLS (port spécifié via --ports inclus) ne
+        //    doit plus produire un faux « aucun serveur HTTP accessible ».
+        let mut used_url = format!("https://{}/", hostport);
+        // 2bis. HEAD natif HTTP d'abord (zéro spawn). Si le serveur répond,
+        //       on parse directement ; sinon fallback HTTPS via curl (TLS).
+        let mut native_head: Option<String> = None;
+        if let Some((host, port)) = crate::utils::split_host_port(&hostport) {
+            if let Some(h) = crate::modules::nethttp::head(
+                &host,
+                port,
+                "/",
+                None,
+                std::time::Duration::from_secs(4),
+            ) {
+                used_url = format!("http://{}/", hostport);
+                native_head = Some(h.raw);
+            }
+        }
+        let https_url = format!("https://{}/", hostport);
+        let headers_output = if native_head.is_some() {
+            None
+        } else {
+            Command::new("curl")
+                .args(["-s", "-I", "--max-time", "5", &https_url])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .or_else(|| {
+                    let fallback = format!("http://{}/", hostport);
+                    let out = Command::new("curl")
+                        .args(["-s", "-I", "--max-time", "5", &fallback])
+                        .output()
+                        .ok()?;
+                    used_url = fallback;
+                    Some(out)
+                })
+        };
+        let out: String = if let Some(nh) = native_head {
+            nh
+        } else if let Some(output) = headers_output {
+            String::from_utf8_lossy(&output.stdout).to_string()
+        } else {
+            String::new()
+        };
         {
-            let out = String::from_utf8_lossy(&output.stdout);
             for line in out.lines() {
                 let trimmed = line.trim();
                 if trimmed.starts_with("HTTP/") {
@@ -115,12 +155,8 @@ impl HttpAuditor {
                             Some((a, b)) => (a, b),
                             None => (v.as_str(), ""),
                         };
-                        let cookie_name = pair
-                            .split('=')
-                            .next()
-                            .unwrap_or("cookie")
-                            .trim()
-                            .to_string();
+                        let cookie_name =
+                            pair.split('=').next().unwrap_or("cookie").trim().to_string();
                         let mut has_secure = false;
                         let mut has_http_only = false;
                         let mut same_site = None;
@@ -222,7 +258,7 @@ impl HttpAuditor {
         }
 
         HttpAuditResult {
-            target_url: https_url,
+            target_url: used_url,
             http_status: status_code,
             redirects_to_https,
             server_header,

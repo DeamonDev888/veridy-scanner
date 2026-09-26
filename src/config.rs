@@ -1,10 +1,13 @@
+#![allow(dead_code)] // ToolFlags::has_any/active_names sont utilises uniquement depuis les tests
+
 use clap::{Parser, Subcommand};
 
 // ==============================================================================
 // TOOL FLAGS — activation des modules Kali
 // ==============================================================================
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct ToolFlags {
     pub nmap: bool,
     pub nuclei: bool,
@@ -21,16 +24,7 @@ pub struct ToolFlags {
     pub httpx: bool,
     pub rustscan: bool,
     pub sqlmap: bool,
-    /// Loot des fichiers sensibles trouvés (opt-in explicite, exclus de enable_all)
     pub loot: bool,
-    // ----- Modules C2 / post-exploitation (opt-in explicite) -----
-    pub sliver: bool,
-    pub havoc: bool,
-    pub merlin: bool,
-    pub poshc2: bool,
-    pub empire: bool,
-    pub chisel: bool,
-    pub netexec: bool,
 }
 
 impl ToolFlags {
@@ -49,7 +43,8 @@ impl ToolFlags {
         self.obscura = true;
         self.httpx = true;
         self.rustscan = true;
-        // sqlmap sciemment EXCLU de enable_all : c'est un outil d'exploitation
+        // sqlmap ET loot sciemment EXCLUS de enable_all : outils d'exploitation actifs (temps + charge reseau + ecriture disque). Opt-in explicite.
+        // loot : c'est un outil d'exploitation
         // actif (temps + charge réseau). Opt-in explicite --sqli uniquement.
     }
 
@@ -70,13 +65,6 @@ impl ToolFlags {
             || self.rustscan
             || self.sqlmap
             || self.loot
-            || self.sliver
-            || self.havoc
-            || self.merlin
-            || self.poshc2
-            || self.empire
-            || self.chisel
-            || self.netexec
     }
 
     pub fn active_names(&self) -> Vec<&'static str> {
@@ -123,27 +111,11 @@ impl ToolFlags {
         if self.rustscan {
             names.push("RustScan");
         }
-        // C2 / post-exploitation : opt-in explicite uniquement
-        if self.sliver {
-            names.push("Sliver");
+        if self.sqlmap {
+            names.push("SQLMap");
         }
-        if self.havoc {
-            names.push("Havoc");
-        }
-        if self.merlin {
-            names.push("Merlin");
-        }
-        if self.poshc2 {
-            names.push("PoshC2");
-        }
-        if self.empire {
-            names.push("Empire");
-        }
-        if self.chisel {
-            names.push("Chisel");
-        }
-        if self.netexec {
-            names.push("NetExec");
+        if self.loot {
+            names.push("Loot");
         }
         names
     }
@@ -153,7 +125,8 @@ impl ToolFlags {
 // CONFIG — configuration d'exécution dérivée de la CLI
 // ==============================================================================
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Config {
     pub target: String,
     pub json_mode: bool,
@@ -211,10 +184,10 @@ enum Commands {
     arg_required_else_help = true,
     after_help = "PROFILS PRÊTS À L'EMPLOI:\n  \
         veridy cible.com -1              Audit rapide Core Rust (~1.5s)\n  \
-        veridy cible.com -2              Périmètre web (WAF+WhatWeb+SSLScan+Dnstwist)\n  \
-        veridy cible.com -3              360° complet — tous les outils Kali\n  \
-        veridy cible.com -4              Infrastructure (Nmap+SSLScan)\n  \
-        veridy cible.com -5              Vulnérabilités (Nuclei+Nikto+Nmap)\n  \
+        veridy cible.com -2              Périmètre web (WAF+WhatWeb+SSLScan+Dnstwist+HTTPx)\n  \
+        veridy cible.com -3              360° complet — tous les outils Kali (SQLMap opt-in via --sqlmap)\n  \
+        veridy cible.com -4              Infrastructure (Nmap+SSLScan+RustScan)\n  \
+        veridy cible.com -5              Vulnérabilités (Nuclei+Nikto+Nmap+SQLMap)\n  \
         veridy cible.com -d              Découverte endpoints (Ffuf+Nikto+WAF)\n\n\
         MODULES À LA CARTE:\n  \
         veridy cible.com --nmap --nuclei\n  \
@@ -266,19 +239,19 @@ struct Cli {
     #[arg(short = '1', long = "fast")]
     fast: bool,
 
-    /// Profil périmètre web : WAF + WhatWeb + SSLScan + Dnstwist
+    /// Profil périmètre web : WAF + WhatWeb + SSLScan + Dnstwist + Httpx
     #[arg(short = '2', long = "web")]
     web: bool,
 
-    /// Profil 360° : TOUS les outils Kali + Obscura
+    /// Profil 360° : TOUS les outils Kali (SQLMap opt-in via --sqlmap) + Obscura
     #[arg(short = '3', long = "full", aliases = ["all-tools", "deep", "360"])]
     full: bool,
 
-    /// Profil infrastructure : Nmap + SSLScan
+    /// Profil infrastructure : Nmap + SSLScan + RustScan
     #[arg(short = '4', long = "infra")]
     infra: bool,
 
-    /// Profil vulnérabilités : Nuclei + Nikto + Nmap
+    /// Profil vulnérabilités : Nuclei + Nikto + Nmap + SQLMap
     #[arg(short = '5', long = "vuln")]
     vuln: bool,
 
@@ -289,12 +262,7 @@ struct Cli {
     /// Modules spécifiques, séparés par virgules
     /// (nmap, nuclei, nikto, waf, whatweb, sslscan, dnstwist, ffuf, whois,
     /// dnsrecon, theharvester, obscura, all)
-    #[arg(
-        short = 'm',
-        long = "modules",
-        value_name = "LIST",
-        value_delimiter = ','
-    )]
+    #[arg(short = 'm', long = "modules", value_name = "LIST", value_delimiter = ',')]
     modules: Vec<String>,
 
     /// Nmap : audit profond des services et scripts NSE
@@ -353,41 +321,13 @@ struct Cli {
     #[arg(long, aliases = ["fast-ports", "sy scan"])]
     rustscan: bool,
 
-    /// SQLMap : détection SQL injection sur les endpoints paramétrés découverts (EXCLUSIF)
+    /// SQLMap : détection SQL injection (opt-in explicite, EXCLU de --full par défaut)
     #[arg(long, aliases = ["sqli"])]
     sqlmap: bool,
 
-    /// Loot : téléchargement + SHA-256 des fichiers sensibles trouvés (opt-in explicite)
+    /// Loot : exfiltre les fichiers sensibles (.git, .env) vers /var/lib/veridy/loot/ (opt-in)
     #[arg(long)]
     loot: bool,
-
-    /// Sliver (C2) : état serveur + implants — opt-in explicite
-    #[arg(long)]
-    sliver: bool,
-
-    /// Havoc (C2) : état teamserver — opt-in explicite
-    #[arg(long)]
-    havoc: bool,
-
-    /// Merlin (C2 HTTP/2) : état serveur — opt-in explicite
-    #[arg(long)]
-    merlin: bool,
-
-    /// PoshC2 (C2) : état service — opt-in explicite
-    #[arg(long)]
-    poshc2: bool,
-
-    /// Empire (C2) : état serveur + DB — opt-in explicite
-    #[arg(long)]
-    empire: bool,
-
-    /// Chisel : démo tunnelling local — opt-in explicite
-    #[arg(long)]
-    chisel: bool,
-
-    /// NetExec : probe SMB null-session (non-destructif) — opt-in explicite
-    #[arg(long)]
-    netexec: bool,
 
     /// Afficher l'historique des scans (flag form, cf. sous-commande `history`)
     #[arg(
@@ -406,7 +346,11 @@ impl Config {
 
         // Sous-commandes
         match &cli.command {
-            Some(Commands::History { limit, target, db }) => {
+            Some(Commands::History {
+                limit,
+                target,
+                db,
+            }) => {
                 return Ok(Some(Config {
                     target: target.clone().unwrap_or_default(),
                     show_history: true,
@@ -460,27 +404,7 @@ impl Config {
             tools.nikto = true;
             tools.nmap = true;
             tools.sqlmap = true;
-        }
-        if cli.sliver {
-            tools.sliver = true;
-        }
-        if cli.havoc {
-            tools.havoc = true;
-        }
-        if cli.merlin {
-            tools.merlin = true;
-        }
-        if cli.poshc2 {
-            tools.poshc2 = true;
-        }
-        if cli.empire {
-            tools.empire = true;
-        }
-        if cli.chisel {
-            tools.chisel = true;
-        }
-        if cli.netexec {
-            tools.netexec = true;
+            tools.loot = true;
         }
         if cli.discovery {
             tools.ffuf = true;
@@ -535,7 +459,6 @@ impl Config {
         if cli.sqlmap {
             tools.sqlmap = true;
         }
-
         if cli.loot {
             tools.loot = true;
         }
@@ -558,13 +481,6 @@ impl Config {
                 "rustscan" | "fast-ports" => tools.rustscan = true,
                 "sqlmap" | "sqli" => tools.sqlmap = true,
                 "loot" => tools.loot = true,
-                "sliver" => tools.sliver = true,
-                "havoc" => tools.havoc = true,
-                "merlin" => tools.merlin = true,
-                "poshc2" => tools.poshc2 = true,
-                "empire" => tools.empire = true,
-                "chisel" => tools.chisel = true,
-                "netexec" => tools.netexec = true,
                 "all" | "360" => tools.enable_all(),
                 _ => {
                     return Err(format!("Module inconnu : '{}'", m));
@@ -638,11 +554,7 @@ impl Config {
         println!("ENVIRONNEMENT KALI — DIAGNOSTIC OUTILS");
         println!("─────────────────────────────────────────────────────────────");
         for (name, desc) in tools {
-            let status = if which(name).is_some() {
-                "[✓]"
-            } else {
-                "[✗]"
-            };
+            let status = if which(name).is_some() { "[✓]" } else { "[✗]" };
             println!("  {} {:<14} {}", status, name, desc);
         }
 

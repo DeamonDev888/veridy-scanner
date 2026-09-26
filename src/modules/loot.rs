@@ -46,45 +46,25 @@ pub const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
 
 /// Extensions à NE PAS looter (binaires, archives inutiles)
 const SKIP_EXTENSIONS: &[&str] = &[
-    ".mp4", ".mov", ".avi", ".mkv", ".webm", ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar", ".iso",
-    ".dmg", ".exe", ".dll", ".so", ".dylib", ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".mp4", ".mov", ".avi", ".mkv", ".webm",
+    ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar",
+    ".iso", ".dmg", ".exe", ".dll", ".so", ".dylib",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
 ];
 
 /// Chemins considérés comme CRITIQUES (toujours lootés même si status != 200)
 /// ou HAUTE valeur offensive (clés SSH, history bash, etc.)
 const HIGH_VALUE_PATHS: &[&str] = &[
-    ".env",
-    ".env.local",
-    ".env.production",
-    ".env.development",
-    ".git/HEAD",
-    ".git/config",
-    ".git/index",
-    ".git/logs/",
-    ".gitignore",
-    ".htaccess",
-    ".htpasswd",
-    "wp-config.php",
-    "id_rsa",
-    "id_rsa.pub",
-    ".ssh/id_rsa",
-    "credentials",
-    ".netrc",
-    ".pgpass",
-    "config.php",
-    "config.yaml",
-    "config.yml",
-    "config.json",
-    "package.json",
-    "composer.json",
-    "Dockerfile",
-    "docker-compose.yml",
-    "docker-compose.yaml",
-    "Makefile",
-    ".bash_history",
-    ".zsh_history",
-    ".DS_Store",
-    "Thumbs.db",
+    ".env", ".env.local", ".env.production", ".env.development",
+    ".git/HEAD", ".git/config", ".git/index", ".git/logs/",
+    ".gitignore", ".htaccess", ".htpasswd", "wp-config.php",
+    "id_rsa", "id_rsa.pub", ".ssh/id_rsa",
+    "credentials", ".netrc", ".pgpass",
+    "config.php", "config.yaml", "config.yml",
+    "config.json", "package.json", "composer.json",
+    "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+    "Makefile", ".bash_history", ".zsh_history",
+    ".DS_Store", "Thumbs.db",
 ];
 
 impl LootCollector {
@@ -96,9 +76,7 @@ impl LootCollector {
 
     /// Vérifie si le path est haute valeur (CRITICAL/HIGH)
     pub fn is_high_value(path: &str) -> bool {
-        HIGH_VALUE_PATHS
-            .iter()
-            .any(|p| path.to_lowercase().contains(&p.to_lowercase()))
+        HIGH_VALUE_PATHS.iter().any(|p| path.to_lowercase().contains(&p.to_lowercase()))
     }
 
     /// Télécharge UN fichier et le sauvegarde localement
@@ -124,24 +102,27 @@ impl LootCollector {
 
         // -s silencieux, --max-filesize = limite stricte côté curl (sort en 63 si dépassé)
         // -w pour récupérer status code + content-type
-        let output = Command::new("curl")
-            .args([
+        let output = match crate::utils::run_tool(
+            "curl",
+            &[
                 "-s",
                 "-L", // suivre redirects
-                "--max-filesize",
-                &(MAX_FILE_SIZE as u64).to_string(),
-                "-o",
-                &tmp_file,
-                "-w",
-                "\\n%{http_code}|%{content_type}",
-                "--max-time",
-                "15",
-                "--connect-timeout",
-                "5",
-            ])
-            .arg(url)
-            .output()
-            .ok()?;
+                "--max-filesize", &(MAX_FILE_SIZE as u64).to_string(),
+                "-o", &tmp_file,
+                "-w", "\\n%{http_code}|%{content_type}",
+                "--max-time", "15",
+                "--connect-timeout", "5",
+                url,
+            ],
+            60,
+        ) {
+            Some(o) => o,
+            None => {
+                eprintln!("[LOOT] avertissement : curl a échoué ou dépassé 60s pour {} — fichier ignoré", url);
+                let _ = fs::remove_file(&tmp_file);
+                return None;
+            }
+        };
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let last_line = stdout.lines().last().unwrap_or("|");
@@ -156,7 +137,14 @@ impl LootCollector {
         }
 
         // Vérifie la taille du fichier téléchargé
-        let metadata = fs::metadata(&tmp_file).ok()?;
+        let metadata = match fs::metadata(&tmp_file) {
+            Ok(m) => m,
+            Err(e) => {
+                eprintln!("[LOOT] avertissement : métadonnées indisponibles pour {} ({}) — fichier ignoré", url, e);
+                let _ = fs::remove_file(&tmp_file);
+                return None;
+            }
+        };
         let size = metadata.len() as usize;
         if size == 0 || size > MAX_FILE_SIZE {
             let _ = fs::remove_file(&tmp_file);
@@ -164,7 +152,14 @@ impl LootCollector {
         }
 
         // Calcule SHA-256 + premiers 64 bytes (hex)
-        let bytes = fs::read(&tmp_file).ok()?;
+        let bytes = match fs::read(&tmp_file) {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("[LOOT] avertissement : lecture impossible de {} ({}) — fichier ignoré", url, e);
+                let _ = fs::remove_file(&tmp_file);
+                return None;
+            }
+        };
         let sha256 = Self::sha256_hex(&bytes);
         let first_64_hex = Self::first_n_hex(&bytes, 64);
 
@@ -182,7 +177,11 @@ impl LootCollector {
         // Déplace tmp → loot_dir
         if fs::rename(&tmp_file, &local_path).is_err() {
             // Fallback : copy + remove (cross-device)
-            fs::copy(&tmp_file, &local_path).ok()?;
+            if let Err(e) = fs::copy(&tmp_file, &local_path) {
+                eprintln!("[LOOT] avertissement : copie impossible de {} vers {} ({}) — fichier ignoré", url, local_path.display(), e);
+                let _ = fs::remove_file(&tmp_file);
+                return None;
+            }
             let _ = fs::remove_file(&tmp_file);
         }
 
@@ -201,19 +200,10 @@ impl LootCollector {
             "first_64_bytes_hex": first_64_hex,
             "scan_duration_ms": start.elapsed().as_millis(),
         });
-        let meta_path = local_path.with_extension(format!(
-            "{}.meta.json",
-            local_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("")
-        ));
+        let meta_path = local_path.with_extension(format!("{}.meta.json",
+            local_path.extension().and_then(|e| e.to_str()).unwrap_or("")));
         if let Ok(mut f) = fs::File::create(&meta_path) {
-            let _ = f.write_all(
-                serde_json::to_string_pretty(&meta)
-                    .unwrap_or_default()
-                    .as_bytes(),
-            );
+            let _ = f.write_all(serde_json::to_string_pretty(&meta).unwrap_or_default().as_bytes());
         }
 
         Some(LootEntry {
@@ -234,11 +224,7 @@ impl LootCollector {
     /// Loote une liste d'URLs (typiquement les endpoints exposés par ffuf)
     pub fn loot_urls(
         scan_id: i64,
-        urls: Vec<(
-            String, /* url */
-            String, /* severity */
-            String, /* category */
-        )>,
+        urls: Vec<(String /* url */, String /* severity */, String /* category */)>,
         timestamp: &str,
         base_loot_dir: &str,
     ) -> LootResult {
@@ -328,13 +314,8 @@ impl LootCollector {
             hash ^= b as u64;
             hash = hash.wrapping_mul(0x100000001b3);
         }
-        format!(
-            "{:016x}{:016x}{:016x}{:016x}",
-            hash,
-            hash.wrapping_mul(0x100000001b3),
-            hash.rotate_left(7),
-            hash.rotate_right(13)
-        )
+        format!("{:016x}{:016x}{:016x}{:016x}",
+            hash, hash.wrapping_mul(0x100000001b3), hash.rotate_left(7), hash.rotate_right(13))
     }
 
     pub fn first_n_hex(bytes: &[u8], n: usize) -> String {

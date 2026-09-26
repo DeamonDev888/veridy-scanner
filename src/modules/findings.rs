@@ -10,7 +10,8 @@ use crate::modules::vuln_audit::VulnAuditResult;
 use crate::modules::web_endpoints::WebEndpointsResult;
 
 #[allow(dead_code)]
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone)]
+#[derive(serde::Serialize)]
 pub struct SecurityFinding {
     pub severity: &'static str, // CRITICAL, HIGH, MEDIUM, LOW, INFO
     pub category: &'static str, // DNS, PORT, HTTP, TLS, COOKIE, SUBDOMAIN, EMAIL, WEB, CVE, SRI, CORS, GEO, OSINT, NMAP, NUCLEI, NIKTO, WAF, BRAND, SECRETS, MIXED_CONTENT, WHOIS, SUPPLY_CHAIN, FRONTEND, OBSCURA
@@ -20,7 +21,16 @@ pub struct SecurityFinding {
 
 pub struct FindingsEngine;
 
+/// La cible est-elle une IP nue ? Une IP n'a pas de zone DNS — SPF/DMARC/CAA/
+/// DKIM/MTA-STS/BIMI seraient des faux positifs absurdes (bruit de score).
+fn is_bare_ip_target(domain: &str) -> bool {
+    domain.parse::<std::net::IpAddr>().is_ok()
+}
+
 impl FindingsEngine {
+    /// Orchestrateur : délègue chaque domaine d'audit à un sous-évaluateur
+    /// privé, dans un ordre fixe qui garantit un comportement identique au
+    /// moteur monolithique historique (mêmes findings, même ordre, même score).
     #[allow(clippy::too_many_arguments)]
     pub fn evaluate(
         dns: &DnsAuditResult,
@@ -34,13 +44,26 @@ impl FindingsEngine {
         dns_hardening: &DnsHardeningResult,
         vuln_audit: &VulnAuditResult,
     ) -> Vec<SecurityFinding> {
+        let is_bare_ip = is_bare_ip_target(&dns.domain);
+
+        let mut findings = Vec::new();
+        findings.extend(Self::eval_dns(dns, is_bare_ip));
+        findings.extend(Self::eval_ports(ports, &dns.domain));
+        findings.extend(Self::eval_dns_hardening(dns_hardening));
+        findings.extend(Self::eval_email(email_sec, is_bare_ip));
+        findings.extend(Self::eval_http(http));
+        findings.extend(Self::eval_web_endpoints(web_endpoints, http.http_status > 0));
+        findings.extend(Self::eval_tls(tls));
+        findings.extend(Self::eval_geo(geo, dns));
+        findings.extend(Self::eval_subdomains(subdomains));
+        findings.extend(Self::eval_vuln_audit(vuln_audit));
+        findings
+    }
+
+    /// 1. Audit DNS & SPF/DMARC/CAA/MX (spécifique à un domaine, pas une IP nue).
+    fn eval_dns(dns: &DnsAuditResult, is_bare_ip: bool) -> Vec<SecurityFinding> {
         let mut findings = Vec::new();
 
-        // Contexte de cible : une IP nue n'a pas de zone DNS — SPF/DMARC/CAA/
-        // DKIM/MTA-STS/BIMI seraient des faux positifs absurdes (bruit de score)
-        let is_bare_ip = dns.domain.parse::<std::net::IpAddr>().is_ok();
-
-        // 1. Audit DNS & SPF/DMARC
         if is_bare_ip {
             // Pas de zone DNS sur une IP : on saute tout le bloc email/DNS
         } else if !dns.spf_found {
@@ -131,7 +154,12 @@ impl FindingsEngine {
             });
         }
 
-        // 2. Audit Ports & Services
+        findings
+    }
+
+    /// 2. Audit Ports & Services (bannières, ports à risque, bases de données).
+    fn eval_ports(ports: &[PortScanResult], target_domain: &str) -> Vec<SecurityFinding> {
+        let mut findings = Vec::new();
         for p in ports {
             // Bannière de service : version logicielle + empreinte OS divulgées
             if let Some(ref b) = p.banner {
@@ -172,16 +200,35 @@ impl FindingsEngine {
                     recommendation: "Restreindre l'accès RDP via un VPN ou un bastion avec authentification MFA.".into(),
                 });
             } else if p.port == 3306 || p.port == 5432 || p.port == 6379 || p.port == 27017 {
-                findings.push(SecurityFinding {
-                    severity: "HIGH",
-                    category: "PORT",
-                    title: format!("Port de base de données {} ({}) exposé publiquement", p.port, p.service_hint),
-                    recommendation: "Lier le service à localhost (127.0.0.1) ou filtrer l'accès via pare-feu (UFW).".into(),
-                });
+                // Anti-faux-positif : sur une cible loopback (127.0.0.0/8 ou ::1),
+                // le port DB n'est PAS exposé publiquement — service local uniquement.
+                let is_loopback_target = target_domain
+                    .parse::<std::net::IpAddr>()
+                    .map(|ip| ip.is_loopback())
+                    .unwrap_or(false);
+                if is_loopback_target {
+                    findings.push(SecurityFinding {
+                        severity: "INFO",
+                        category: "PORT",
+                        title: format!("Port de base de données {} ({}) en écoute — service local (loopback), non exposé publiquement", p.port, p.service_hint),
+                        recommendation: "Service joignable uniquement en local : aucune exposition externe détectée.".into(),
+                    });
+                } else {
+                    findings.push(SecurityFinding {
+                        severity: "HIGH",
+                        category: "PORT",
+                        title: format!("Port de base de données {} ({}) exposé publiquement", p.port, p.service_hint),
+                        recommendation: "Lier le service à localhost (127.0.0.1) ou filtrer l'accès via pare-feu (UFW).".into(),
+                    });
+                }
             }
         }
+        findings
+    }
 
-        // 3. Audit Durcissement DNS (Open Resolver check)
+    /// 3. Audit Durcissement DNS (Open Resolver check).
+    fn eval_dns_hardening(dns_hardening: &DnsHardeningResult) -> Vec<SecurityFinding> {
+        let mut findings = Vec::new();
         if dns_hardening.is_open_resolver_risk {
             findings.push(SecurityFinding {
                 severity: "CRITICAL",
@@ -190,8 +237,12 @@ impl FindingsEngine {
                 recommendation: "Désactiver la récursion dans Named/Knot/Bind ('recursion no;') pour éviter d'être exploité dans des attaques DDoS par amplification.".into(),
             });
         }
+        findings
+    }
 
-        // 4. Audit Messagerie Avancée
+    /// 4. Audit Messagerie Avancée (SPF lookups, DKIM, MTA-STS, BIMI).
+    fn eval_email(email_sec: &EmailSecurityResult, is_bare_ip: bool) -> Vec<SecurityFinding> {
+        let mut findings = Vec::new();
         if !is_bare_ip && !email_sec.spf_lookup_valid {
             findings.push(SecurityFinding {
                 severity: "CRITICAL",
@@ -219,12 +270,7 @@ impl FindingsEngine {
         }
 
         if !is_bare_ip && !email_sec.dkim_selectors_found.is_empty() {
-            let sels: Vec<String> = email_sec
-                .dkim_selectors_found
-                .iter()
-                .take(3)
-                .cloned()
-                .collect();
+            let sels: Vec<String> = email_sec.dkim_selectors_found.iter().take(3).cloned().collect();
             findings.push(SecurityFinding {
                 severity: "INFO",
                 category: "EMAIL",
@@ -235,7 +281,10 @@ impl FindingsEngine {
             });
         }
 
-        if !is_bare_ip && email_sec.mta_sts_present && email_sec.mta_sts_mode.is_none() {
+        if !is_bare_ip
+            && email_sec.mta_sts_present
+            && email_sec.mta_sts_mode.is_none()
+        {
             findings.push(SecurityFinding {
                 severity: "MEDIUM",
                 category: "EMAIL",
@@ -263,8 +312,13 @@ impl FindingsEngine {
                 recommendation: "Optionnel : Configurer 'default._bimi' avec un logo SVG certifié pour afficher votre logo dans Gmail/Apple Mail.".into(),
             });
         }
+        findings
+    }
 
-        // 5. Audit HTTP & Headers
+    /// 5. Audit HTTP & Headers (redirection, HSTS, CSP, cookies).
+    fn eval_http(http: &HttpAuditResult) -> Vec<SecurityFinding> {
+        let mut findings = Vec::new();
+
         let http_service_present = http.http_status > 0;
         if !http_service_present {
             findings.push(SecurityFinding {
@@ -272,7 +326,7 @@ impl FindingsEngine {
                 category: "HTTP",
                 title: "Aucun serveur HTTP/HTTPS accessible en tête de cible".into(),
                 recommendation:
-                    "Ni le port 80 ni le 443 n'ont répondu : audit applicatif web non applicable."
+                    "Aucun port HTTP/HTTPS n'a répondu (80/443 ou ports spécifiés) : audit applicatif web non applicable."
                         .into(),
             });
         }
@@ -339,8 +393,8 @@ impl FindingsEngine {
                     severity: "LOW",
                     category: "HTTP",
                     title: format!("Divulgation du serveur Web : '{}'", s),
-                    recommendation:
-                        "Masquer la signature 'Server' (ex: server_tokens off dans Nginx).".into(),
+                    recommendation: "Masquer la signature 'Server' (ex: server_tokens off dans Nginx)."
+                        .into(),
                 });
             }
         }
@@ -348,60 +402,67 @@ impl FindingsEngine {
         // HSTS : évaluation du max-age réel (trop court = protection dégradée)
         if http_service_present {
             if let Some(ref v) = http.hsts_value {
-                let max_age = v
-                    .split(';')
-                    .find_map(|p| p.trim().strip_prefix("max-age="))
-                    .and_then(|s| s.trim().parse::<u64>().ok());
-                if let Some(age) = max_age {
-                    if age < 15_768_000 {
-                        findings.push(SecurityFinding {
-                            severity: "MEDIUM",
-                            category: "HTTP",
-                            title: format!(
-                                "HSTS max-age trop court ({} s < 6 mois recommandés)",
-                                age
-                            ),
-                            recommendation:
-                                "Porter max-age à au moins 31536000 (1 an) avec includeSubDomains."
-                                    .into(),
-                        });
-                    }
-                }
-            }
-        }
-
-        // Cookies : chaque cookie sans Secure/HttpOnly est signalé (l'ancien
-        // moteur listait les cookies mais ne générait AUCUN finding)
-        if http_service_present {
-            for c in &http.cookies {
-                if !c.secure || !c.http_only || c.same_site.is_none() {
-                    let mut missing = Vec::new();
-                    if !c.secure {
-                        missing.push("Secure");
-                    }
-                    if !c.http_only {
-                        missing.push("HttpOnly");
-                    }
-                    if c.same_site.is_none() {
-                        missing.push("SameSite");
-                    }
+            let max_age = v
+                .split(';')
+                .find_map(|p| p.trim().strip_prefix("max-age="))
+                .and_then(|s| s.trim().parse::<u64>().ok());
+            if let Some(age) = max_age {
+                if age < 15_768_000 {
                     findings.push(SecurityFinding {
                         severity: "MEDIUM",
-                        category: "COOKIE",
+                        category: "HTTP",
                         title: format!(
-                            "Cookie '{}' émis sans attribut(s) de sécurité : {}",
-                            c.name,
-                            missing.join(", ")
+                            "HSTS max-age trop court ({} s < 6 mois recommandés)",
+                            age
                         ),
                         recommendation:
-                            "Ajouter Secure, HttpOnly et SameSite=Lax/Strict sur tous les cookies."
+                            "Porter max-age à au moins 31536000 (1 an) avec includeSubDomains."
                                 .into(),
                     });
                 }
             }
         }
+        }
 
-        // 6. Audit Web Endpoints
+        // Cookies : chaque cookie sans Secure/HttpOnly est signalé (l'ancien
+        // moteur listait les cookies mais ne générait AUCUN finding)
+        if http_service_present {
+        for c in &http.cookies {
+            if !c.secure || !c.http_only || c.same_site.is_none() {
+                let mut missing = Vec::new();
+                if !c.secure {
+                    missing.push("Secure");
+                }
+                if !c.http_only {
+                    missing.push("HttpOnly");
+                }
+                if c.same_site.is_none() {
+                    missing.push("SameSite");
+                }
+                findings.push(SecurityFinding {
+                    severity: "MEDIUM",
+                    category: "COOKIE",
+                    title: format!(
+                        "Cookie '{}' émis sans attribut(s) de sécurité : {}",
+                        c.name,
+                        missing.join(", ")
+                    ),
+                    recommendation:
+                        "Ajouter Secure, HttpOnly et SameSite=Lax/Strict sur tous les cookies."
+                            .into(),
+                });
+            }
+        }
+        }
+        findings
+    }
+
+    /// 6. Audit Web Endpoints (robots.txt, security.txt, méthodes HTTP).
+    fn eval_web_endpoints(
+        web_endpoints: &WebEndpointsResult,
+        http_service_present: bool,
+    ) -> Vec<SecurityFinding> {
+        let mut findings = Vec::new();
         // robots.txt : les Disallow révèlent les chemins sensibles (recon passive)
         if http_service_present {
             let paths: Vec<&String> = web_endpoints
@@ -450,9 +511,15 @@ impl FindingsEngine {
                 recommendation: "Désactiver TRACE, TRACK, PUT, DELETE au niveau de la configuration du serveur Web.".into(),
             });
         }
+        findings
+    }
 
-        // 7. Audit TLS — unfinding si aucun certificat n'a pu être récupéré
-        // (443 fermé/filtré) : l'absence de service TLS n'est pas une faille.
+    /// 7. Audit TLS.
+    ///
+    /// Unfinding si aucun certificat n'a pu être récupéré (443 fermé/filtré) :
+    /// l'absence de service TLS n'est pas une faille.
+    fn eval_tls(tls: &TlsAuditResult) -> Vec<SecurityFinding> {
+        let mut findings = Vec::new();
         let tls_service_present = tls.subject.is_some() || tls.issuer.is_some();
         if !tls_service_present {
             findings.push(SecurityFinding {
@@ -469,7 +536,8 @@ impl FindingsEngine {
                 category: "TLS",
                 title: "Chaîne de confiance du certificat TLS invalide ou compromise".into(),
                 recommendation:
-                    "Renouveler immédiatement le certificat auprès d'une autorité reconnue.".into(),
+                    "Renouveler immédiatement le certificat auprès d'une autorité reconnue."
+                        .into(),
             });
         }
 
@@ -535,16 +603,18 @@ impl FindingsEngine {
                         .into(),
             });
         }
+        findings
+    }
 
-        // 8. Localisation géographique de l'hébergement (informationnel uniquement)
+    /// 8. Localisation géographique de l'hébergement (informationnel uniquement).
+    fn eval_geo(geo: &GeoComplianceResult, dns: &DnsAuditResult) -> Vec<SecurityFinding> {
+        let mut findings = Vec::new();
         let is_private_ip = geo
             .ip_address
             .parse::<std::net::IpAddr>()
             .ok()
             .map(|ip| match ip {
-                std::net::IpAddr::V4(v4) => {
-                    v4.is_private() || v4.is_loopback() || v4.is_link_local()
-                }
+                std::net::IpAddr::V4(v4) => v4.is_private() || v4.is_loopback() || v4.is_link_local(),
                 std::net::IpAddr::V6(v6) => v6.is_loopback() || v6.is_unicast_link_local(),
             })
             .unwrap_or(false);
@@ -566,21 +636,16 @@ impl FindingsEngine {
                 category: "GEO",
                 title: format!("IP privée (réseau interne) : {}", geo.ip_address),
                 recommendation:
-                    "Cible sur un réseau privé — géolocalisation et whois non applicables.".into(),
+                    "Cible sur un réseau privé — géolocalisation et whois non applicables."
+                        .into(),
             });
         } else if geo.is_canada {
             let region_info = geo.region.as_deref().unwrap_or("Canada");
             findings.push(SecurityFinding {
                 severity: "INFO",
                 category: "GEO",
-                title: format!(
-                    "Hébergement détecté au {} ({}, {})",
-                    region_info,
-                    geo.org_name.as_deref().unwrap_or(""),
-                    geo.city.as_deref().unwrap_or("")
-                ),
-                recommendation: "Information géographique issue du whois — aucune action requise."
-                    .into(),
+                title: format!("Hébergement détecté au {} ({}, {})", region_info, geo.org_name.as_deref().unwrap_or(""), geo.city.as_deref().unwrap_or("")),
+                recommendation: "Information géographique issue du whois — aucune action requise.".into(),
             });
         } else {
             findings.push(SecurityFinding {
@@ -590,8 +655,12 @@ impl FindingsEngine {
                 recommendation: "Information géographique issue du whois — vérifier la politique de transfert de données applicable à votre contexte.".into(),
             });
         }
+        findings
+    }
 
-        // 9. Sous-domaines : inventaire vivants/morts + IPs d'infrastructure
+    /// 9. Sous-domaines : inventaire vivants/morts + IPs d'infrastructure.
+    fn eval_subdomains(subdomains: &[SubdomainResult]) -> Vec<SecurityFinding> {
+        let mut findings = Vec::new();
         if !subdomains.is_empty() {
             let alive = subdomains.iter().filter(|s| s.is_alive).count();
             let dead: Vec<&str> = subdomains
@@ -631,17 +700,177 @@ impl FindingsEngine {
                         .into(),
             });
         }
+        findings
+    }
 
-        // 10. Vulnérabilités Applicatives (CVEs, SRI, Mixed Content, CORS)
-        for v in &vuln_audit.findings {
-            findings.push(SecurityFinding {
+    /// 10. Vulnérabilités Applicatives (CVEs, SRI, Mixed Content, CORS).
+    fn eval_vuln_audit(vuln_audit: &VulnAuditResult) -> Vec<SecurityFinding> {
+        vuln_audit
+            .findings
+            .iter()
+            .map(|v| SecurityFinding {
                 severity: v.severity,
                 category: v.category,
                 title: v.title.clone(),
                 recommendation: format!("{} (Réf: {})", v.fix, v.owasp),
-            });
-        }
+            })
+            .collect()
+    }
+}
 
-        findings
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Tests unitaires des sous-évaluateurs isolés (refactor evaluate) ---
+
+    #[test]
+    fn test_eval_tls_expiry_ladder() {
+        // Présent + valide : ni CRITICAL chaîne, ni expiration
+        let tls = TlsAuditResult {
+            subject: Some("CN=example.com".into()),
+            issuer: Some("Let's Encrypt".into()),
+            is_valid: true,
+            days_remaining: Some(90),
+            ..Default::default()
+        };
+        let f = FindingsEngine::eval_tls(&tls);
+        assert!(f.is_empty(), "certificat sain = aucun finding TLS, got {:?}", f);
+
+        // Expiré depuis 3 jours : CRITICAL avec le titre exact du monolithe
+        let tls = TlsAuditResult {
+            subject: Some("CN=example.com".into()),
+            is_valid: true,
+            days_remaining: Some(-3),
+            ..Default::default()
+        };
+        let f = FindingsEngine::eval_tls(&tls);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].severity, "CRITICAL");
+        assert_eq!(f[0].title, "Certificat TLS EXPIRÉ depuis 3 jour(s)");
+
+        // 20 jours : MEDIUM (palier < 30)
+        let tls = TlsAuditResult {
+            subject: Some("CN=example.com".into()),
+            is_valid: true,
+            days_remaining: Some(20),
+            ..Default::default()
+        };
+        let f = FindingsEngine::eval_tls(&tls);
+        assert_eq!((f.len(), f[0].severity), (1, "MEDIUM"));
+
+        // Aucun certificat récupéré : unfinding INFO, pas un CRITICAL
+        let f = FindingsEngine::eval_tls(&TlsAuditResult::default());
+        assert_eq!((f.len(), f[0].severity, f[0].category), (1, "INFO", "TLS"));
+    }
+
+    #[test]
+    fn test_eval_ports_loopback_db_not_flagged() {
+        // 5432 sur une cible loopback = INFO (service local), pas HIGH
+        let ports = vec![PortScanResult {
+            port: 5432,
+            is_open: true,
+            service_hint: "postgresql",
+            banner: None,
+        }];
+        let f = FindingsEngine::eval_ports(&ports, "127.0.0.1");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].severity, "INFO");
+        assert!(f[0].title.contains("non exposé publiquement"));
+
+        // Même port sur un domaine public = HIGH
+        let f = FindingsEngine::eval_ports(&ports, "example.com");
+        assert_eq!((f.len(), f[0].severity), (1, "HIGH"));
+
+        // Bannière courte (<= 8 chars) ignorée ; Telnet = CRITICAL
+        let ports = vec![
+            PortScanResult { port: 80, is_open: true, service_hint: "http", banner: Some("ssh".into()) },
+            PortScanResult { port: 23, is_open: true, service_hint: "telnet", banner: None },
+        ];
+        let f = FindingsEngine::eval_ports(&ports, "example.com");
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].severity, "CRITICAL");
+        assert!(f[0].title.contains("Telnet"));
+    }
+
+    #[test]
+    fn test_eval_dns_bare_ip_skips_all() {
+        // Cible IP nue : tout le bloc DNS/email est sauté, quel que soit l'état
+        // (réaliste : aucun audit DNS n'a lieu, dmarc_policy reste None)
+        let dns = DnsAuditResult {
+            domain: "192.0.2.10".into(),
+            spf_found: false,
+            mx_records: vec!["mail.example.com".into()],
+            ..Default::default()
+        };
+        let f = FindingsEngine::eval_dns(&dns, true);
+        assert!(f.is_empty(), "IP nue = zéro finding DNS, got {:?}", f);
+
+        // Même état sur un domaine : findings dans l'ordre exact du monolithe
+        let dns = DnsAuditResult {
+            domain: "example.com".into(),
+            dmarc_found: true,
+            dmarc_policy: Some("none".into()),
+            ..dns
+        };
+        let f = FindingsEngine::eval_dns(&dns, false);
+        let got: Vec<_> = f.iter().map(|x| (x.severity, x.category)).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("HIGH", "DNS"),   // SPF absent
+                ("LOW", "DNS"),    // DMARC p=none
+                ("LOW", "DNS"),    // DNSSEC absent
+                ("INFO", "EMAIL"), // MX présents
+                ("LOW", "DNS"),    // CAA absents
+            ]
+        );
+    }
+
+    #[test]
+    fn test_eval_http_cookies_and_hsts_max_age() {
+        // Pas de service HTTP : un seul unfinding INFO, cookies ignorés
+        let http = HttpAuditResult {
+            http_status: 0,
+            cookies: vec![crate::modules::http::CookieAuditEntry {
+                name: "sid".into(),
+                secure: false,
+                http_only: false,
+                same_site: None,
+            }],
+            ..Default::default()
+        };
+        let f = FindingsEngine::eval_http(&http);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].title, "Aucun serveur HTTP/HTTPS accessible en tête de cible");
+
+        // Service présent : cookie non durci signalé + HSTS max-age trop court
+        let http = HttpAuditResult {
+            http_status: 200,
+            hsts_present: true,
+            hsts_value: Some("max-age=86400".into()),
+            csp_present: true,
+            csp_value: Some("script-src 'unsafe-inline'".into()),
+            cookies: vec![crate::modules::http::CookieAuditEntry {
+                name: "sid".into(),
+                secure: true,
+                http_only: false,
+                same_site: None,
+            }],
+            ..Default::default()
+        };
+        let f = FindingsEngine::eval_http(&http);
+        let titles: Vec<&str> = f.iter().map(|x| x.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            vec![
+                "Pas de redirection forcée vers HTTPS",
+                "CSP présente mais contournable : directive 'unsafe-inline' active",
+                "En-tête X-Frame-Options manquant",
+                "HSTS max-age trop court (86400 s < 6 mois recommandés)",
+                "Cookie 'sid' émis sans attribut(s) de sécurité : HttpOnly, SameSite",
+            ],
+            "ordre d'émission identique au monolithe"
+        );
     }
 }
