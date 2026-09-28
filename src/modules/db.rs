@@ -231,7 +231,7 @@ impl DatabaseManager {
 
         // Géolocalisation (données factuelles de localisation IP uniquement)
         tx.execute(
-            "INSERT INTO audit_geo_compliance \
+            "INSERT INTO audit_geo \
              (scan_id, ip_address, asn, org_name, country_code, region, city, is_canada, is_quebec) \
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
             &[
@@ -246,7 +246,7 @@ impl DatabaseManager {
                 &report.geo.is_quebec,
             ],
         )
-        .map_err(|e| format!("audit_geo_compliance : {e}"))?;
+        .map_err(|e| format!("audit_geo : {e}"))?;
 
         // Email Security
         tx.execute(
@@ -618,7 +618,7 @@ impl DatabaseManager {
             "audit_tls_certs",
             "audit_subdomains",
             "audit_findings",
-            "audit_geo_compliance",
+            "audit_geo",
             "audit_email_sec",
             "audit_web_endpoints",
             "audit_dns_hardening",

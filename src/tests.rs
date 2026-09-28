@@ -1395,7 +1395,7 @@ fn test_lock_db_save_scan_atomic_and_typed() {
     // inconditionnelles), et les 2 ports du dummy doivent y etre.
     let cnt5: i64 = client
         .query_one(
-            "SELECT (SELECT count(*) FROM audit_tls_certs WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_geo_compliance WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_email_sec WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_web_endpoints WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_dns_hardening WHERE scan_id=$1)",
+            "SELECT (SELECT count(*) FROM audit_tls_certs WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_geo WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_email_sec WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_web_endpoints WHERE scan_id=$1)                     + (SELECT count(*) FROM audit_dns_hardening WHERE scan_id=$1)",
             &[&scan_id],
         )
         .unwrap()
@@ -1525,4 +1525,71 @@ fn test_lock_db_rollback_mid_transaction() {
         count_before, count_after,
         "rollback : aucun scan orphelin ne doit survivre à un échec mid-transaction"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Verrous deduplication findings (2026-09-28)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_lock_nuclei_dedup_same_template_url() {
+    use crate::modules::findings::SecurityFinding;
+    use crate::modules::nuclei_deep::{NucleiAuditResult, NucleiAuditor, NucleiItem};
+
+    let item = |matched_at: &str| NucleiItem {
+        template_id: "http-missing-security-headers".into(),
+        name: "HTTP Missing Security Headers".into(),
+        severity: "info".into(),
+        matched_at: matched_at.into(),
+        description: String::new(),
+    };
+    let result = NucleiAuditResult {
+        items: vec![
+            item("https://a.ca/"),
+            item("https://a.ca/"),
+            item("https://a.ca/"),
+        ],
+        ..Default::default()
+    };
+    let f: Vec<SecurityFinding> = NucleiAuditor.to_findings(&result);
+    assert_eq!(f.len(), 1, "3 matches identiques -> 1 finding agrege");
+    assert!(
+        f[0].title.contains("3 correspondances"),
+        "titre agrege attendu, got {}",
+        f[0].title
+    );
+
+    // Templates differents ou URLs differentes : chaque match garde sa ligne.
+    let result = NucleiAuditResult {
+        items: vec![
+            item("https://a.ca/"),
+            item("https://b.ca/"),
+            NucleiItem {
+                template_id: "autre-template".into(),
+                name: "Autre".into(),
+                severity: "medium".into(),
+                matched_at: "https://a.ca/".into(),
+                description: String::new(),
+            },
+        ],
+        ..Default::default()
+    };
+    let f = NucleiAuditor.to_findings(&result);
+    assert_eq!(f.len(), 3, "matches distincts tous conserves");
+}
+
+#[test]
+fn test_lock_dnsrecon_no_duplicate_bind_versions() {
+    use crate::modules::dnsrecon_audit::{DnsreconAuditor, DnsreconResult};
+
+    let res = DnsreconResult {
+        bind_versions: vec![
+            ("lou.ns.cloudflare.com".into(), "2026.1.1".into()),
+            ("lou.ns.cloudflare.com".into(), "2026.1.1".into()),
+            ("lady.ns.cloudflare.com".into(), "2026.1.1".into()),
+        ],
+        ..Default::default()
+    };
+    let f = DnsreconAuditor.to_findings(&res);
+    assert_eq!(f.len(), 2, "doublon (serveur, version) -> 1 seule ligne");
 }

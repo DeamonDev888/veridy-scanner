@@ -91,8 +91,15 @@ mod tests {
     #[test]
     fn aucun_stor_dans_le_binaire() {
         // garde-fou anti-régression : le module ne doit JAMAIS tenter d'upload
+        // Garde-fou anti-upload : le verrou scanne un token interdit construit
+        // dynamiquement, sinon la commande de verification se matcherait elle-meme
+        // dans le source (piege d'auto-detection).
+        let forbidden = ["-", "t", " "].concat();
         let src = include_str!("ftpx.rs");
-        assert!(!src.to_lowercase().contains("-t "), "STOR interdit");
+        assert!(
+            !src.to_lowercase().contains(forbidden.as_str()),
+            "upload vers la cible interdit"
+        );
         assert!(src.contains("--ftp-pasv"));
     }
 }

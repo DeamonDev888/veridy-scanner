@@ -81,7 +81,11 @@ impl DnsreconAuditor {
 
                         if let Some(version) = extract_json_str(&obj, "Version") {
                             let clean_v = version.trim_matches('"').trim().to_string();
-                            if !clean_v.is_empty() {
+                            if !clean_v.is_empty()
+                                && !result
+                                    .bind_versions
+                                    .contains(&(target.clone(), clean_v.clone()))
+                            {
                                 result.bind_versions.push((target, clean_v));
                             }
                         }
@@ -104,7 +108,12 @@ impl DnsreconAuditor {
         use crate::modules::findings::SecurityFinding;
         let mut findings = Vec::new();
 
+        let mut emitted: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
         for (target, version) in &res.bind_versions {
+            if !emitted.insert((target.clone(), version.clone())) {
+                continue;
+            }
             findings.push(SecurityFinding {
                 severity: "LOW",
                 category: "DNS",

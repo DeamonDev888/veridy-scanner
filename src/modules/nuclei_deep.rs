@@ -126,7 +126,25 @@ impl NucleiAuditor {
     pub fn to_findings(&self, result: &NucleiAuditResult) -> Vec<SecurityFinding> {
         let mut findings = Vec::new();
 
+        // Nuclei emet un match par occurrence trouvee (ex : un par header
+        // manquant pour http-missing-security-headers) : on agrege par
+        // (template, url) pour ne produire qu'un finding par vulnabilite
+        // par cible, avec le nombre de correspondances dans le titre.
+        let mut counts: std::collections::HashMap<(String, String), usize> =
+            std::collections::HashMap::new();
         for it in &result.items {
+            *counts
+                .entry((it.template_id.clone(), it.matched_at.clone()))
+                .or_insert(0) += 1;
+        }
+        let mut emitted: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
+
+        for it in &result.items {
+            let key = (it.template_id.clone(), it.matched_at.clone());
+            if !emitted.insert(key.clone()) {
+                continue;
+            }
             let sev_static: &'static str = match it.severity.as_str() {
                 "CRITICAL" => "CRITICAL",
                 "HIGH" => "HIGH",
@@ -150,7 +168,14 @@ impl NucleiAuditor {
             findings.push(SecurityFinding {
                 severity: sev_static,
                 category: "NUCLEI",
-                title: format!("Nuclei [{}] - {}", it.template_id, it.name),
+                title: if counts[&key] > 1 {
+                    format!(
+                        "Nuclei [{}] - {} ({} correspondances)",
+                        it.template_id, it.name, counts[&key]
+                    )
+                } else {
+                    format!("Nuclei [{}] - {}", it.template_id, it.name)
+                },
                 recommendation: rec,
             });
         }

@@ -4,6 +4,17 @@ Toutes les modifications notables de `veridy_scanner` sont documentées ici.
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 
+## [0.5.1] — 2026-09-28
+
+### Fixed
+- **Doublons de findings Nuclei** : un template multi-correspondances (ex. `http-missing-security-headers`, un match par en-tête manquant) ne produit plus qu'un seul finding agrégé par (template, URL), avec le nombre de correspondances dans le titre — au lieu de 10 lignes identiques en base.
+- **Doublons de findings Dnsrecon** : déduplication des divulgations de version DNS par (serveur, version) — plus de triple occurrence du même NS.
+- **Test ftpx auto-référent** : le garde-fou anti-upload construisait son verdict sur un littéral présent dans son propre message d'assertion ; le jeton interdit est désormais construit dynamiquement.
+- **Table de géolocalisation renommée** : `audit_geo_compliance` devient `audit_geo` (données factuelles IP/ASN/pays uniquement, 160 lignes préservées, index et code mis à jour).
+
+### Changed
+- **Purge catalogue** : 120 findings dupliqués historiques supprimés (backup `audit_findings_purges_20260928`), 20 scans re-scorés — cohérence score/count vérifiée à 0 écart.
+
 ## [0.3.7] — 2026-09-20
 
 ### Fixed

@@ -232,20 +232,35 @@ cargo clippy --all-targets -- -D warnings  # strict : 0 warning obligatoire
 
 ---
 
-## 🧩 Modules d'impact compagnons — `veridy-impact`
+## 🧩 14 modules d'impact intégrés (même crate depuis v0.5.0)
 
-> Ces modules **NE FONT PAS PARTIE** de `veridy_scanner` (qui reste pur découverte, lecture-seule). Ils sont livrés dans la crate sœur [`veridy-impact`](https://crates.io/crates/veridy-impact) et chaînés automatiquement par `chainx`.
+> Depuis la v0.5.0, les modules d'impact font **partie de `veridy_scanner`** (la crate `veridy-impact` a été yankée sur crates.io — un seul crate, un seul `cargo install`).
 
-- **`chainx`** : dispatcher automatique — lit le catalogue DB, route chaque finding vers son bin d'exploitation en chaîne sûre (GET/DNS uniquement).
-- **`envx` / `gitdump`** : preuves de contenu pour les WEB CRITICAL (gates anti-faux-positif WAF).
-- **`keyprobe` / `gkeyx`** : classification + vérification des clés API (Google Maps non destructive, autres classifiées sans toucher).
-- **`spoofcheck`** : usurpabilité email (USURPABLE/PARTIEL/PROTEGE).
-- **`subalive` / `surfx` / `cnametake` / `cnamewatch`** : revivification + cartographie + surveillance de takeover des sous-domaines.
-- **`ftpx` / `ftplx`** : preuve FTP anonyme (jamais d'upload).
-- **`lootx`** : qualification des fichiers lootés (SENSIBLE / NEUTRE / SANS_VALEUR).
-- **`impacts`** : tableau de bord DB + re-vérification live des clés (`--live`).
+Tous lecture-seule stricte (GET/DNS uniquement). Verdicts persistés dans `audit_impact`.
 
-Installation : `cargo install --locked veridy-impact`. Tous les verdicts dans `audit_impact`.
+| Module | Rôle |
+|---|---|
+| `veridy_scanner chainx` | Dispatcher automatique — lit le catalogue DB, route chaque finding vers son bin |
+| `veridy_scanner envx <url>` | Preuve de contenu d'un `.env` exposé (gates anti-faux-positif WAF) |
+| `veridy_scanner gitdump <base>` | Preuve d'un dépôt `.git/` exposé (remotes + identités, pas de dump complet) |
+| `veridy_scanner keyprobe` (stdin) | Classification + vérif Google Maps des clés API |
+| `veridy_scanner gkeyx` (stdin) | 9 sondes + fuite n° projet Google + phase EXPLOIT |
+| `veridy_scanner spoofcheck <dom>` | Usurpabilité email (USURPABLE/PARTIEL/PROTEGE) |
+| `veridy_scanner subalive <cible> [--fix]` | Re-sonde les sous-domaines « morts » du catalogue |
+| `veridy_scanner surfx <cible>` | Cartographie offensive + flags de priorisation (login/admin/dev/vpn) |
+| `veridy_scanner cnametake <dom>\|--db <cible>` | Takeover CNAME cloud (15 fingerprints) |
+| `veridy_scanner cnamewatch <cible>` | Chien de garde takeover (cron-able, exit 3 = fenêtre ouverte) |
+| `veridy_scanner ftpx <hôte>` | Preuve FTP anonyme (230 vs 530) |
+| `veridy_scanner ftplx <hôte> [--dl]` | Loot FTP borné + SHA-256 (jamais d'upload) |
+| `veridy_scanner lootx [scan_id]` | Qualification des fichiers lootés (SENSIBLE/NEUTRE/SANS_VALEUR) |
+| `veridy_scanner impacts [--live]` | Dashboard DB + re-vérification live des clés |
+
+```bash
+cargo install --locked veridy_scanner
+veridy_scanner chainx                              # campagne auto sur 30j
+veridy_scanner chainx metro.ca --force             # une cible
+veridy_scanner impacts                            # dashboard
+```
 
 ## 📚 Voir aussi
 

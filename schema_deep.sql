@@ -2,7 +2,7 @@
 BEGIN;
 
 -- 1. Table Géolocalisation et ASN
-CREATE TABLE IF NOT EXISTS audit_geo_compliance (
+CREATE TABLE IF NOT EXISTS audit_geo (
     id BIGSERIAL PRIMARY KEY,
     scan_id BIGINT REFERENCES audit_scans(id) ON DELETE CASCADE,
     ip_address VARCHAR(45) NOT NULL,
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS audit_dns_hardening (
 );
 
 -- Index
-CREATE INDEX IF NOT EXISTS idx_audit_geo_scan_id ON audit_geo_compliance(scan_id);
+CREATE INDEX IF NOT EXISTS idx_audit_geo_scan_id ON audit_geo(scan_id);
 CREATE INDEX IF NOT EXISTS idx_audit_email_sec_scan_id ON audit_email_sec(scan_id);
 CREATE INDEX IF NOT EXISTS idx_audit_web_endpoints_scan_id ON audit_web_endpoints(scan_id);
 CREATE INDEX IF NOT EXISTS idx_audit_dns_hardening_scan_id ON audit_dns_hardening(scan_id);
