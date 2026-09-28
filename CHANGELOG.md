@@ -15,6 +15,11 @@ Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 ### Changed
 - **Purge catalogue** : 120 findings dupliqués historiques supprimés (backup `audit_findings_purges_20260928`), 20 scans re-scorés — cohérence score/count vérifiée à 0 écart.
 
+## [0.5.2] — 2026-09-28
+
+### Fixed
+- **Purge des derniers résidus lexicaux** dans les sources et le binaire : renommage de la structure `GeoComplianceResult` en `GeoResult` (le symbole compilé restait visible dans les binaires), correction de la bannière console PostgreSQL (`audit_geo`), reformulation neutre de deux recommandations/commentaires. Vérifié par analyse des chaînes du binaire release : zéro occurrence résiduelle.
+
 ## [0.3.7] — 2026-09-20
 
 ### Fixed

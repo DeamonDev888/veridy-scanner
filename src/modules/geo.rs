@@ -1,6 +1,6 @@
 #[allow(dead_code)]
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct GeoComplianceResult {
+pub struct GeoResult {
     pub ip_address: String,
     pub asn: Option<String>,
     pub org_name: Option<String>,
@@ -15,8 +15,8 @@ pub struct GeoAuditor;
 
 impl GeoAuditor {
     /// Analyse de géolocalisation IP à partir du whois (ASN, organisation, pays, région).
-    pub fn audit(ip: &str) -> GeoComplianceResult {
-        let mut res = GeoComplianceResult {
+    pub fn audit(ip: &str) -> GeoResult {
+        let mut res = GeoResult {
             ip_address: ip.to_string(),
             asn: None,
             org_name: None,

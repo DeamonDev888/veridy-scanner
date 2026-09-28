@@ -131,7 +131,7 @@ impl DnsAuditor {
             }
         }
 
-        // 4. Analyse de conformité SPF
+        // 4. Analyse SPF
         for txt in &result.txt_records {
             if txt.starts_with("v=spf1") {
                 result.spf_found = true;
@@ -151,7 +151,7 @@ impl DnsAuditor {
             );
         }
 
-        // 5. Analyse de conformité DMARC
+        // 5. Analyse DMARC
         if !result.dmarc_found {
             result
                 .issues

@@ -5,7 +5,7 @@ use crate::modules::dns_hardening::DnsHardeningResult;
 use crate::modules::email_sec::{EmailSecAuditor, EmailSecurityResult};
 use crate::modules::ffuf_audit::{ExposedEndpoint, FfufAuditResult, FfufAuditor};
 use crate::modules::findings::{FindingsEngine, SecurityFinding};
-use crate::modules::geo::GeoComplianceResult;
+use crate::modules::geo::GeoResult;
 use crate::modules::http::HttpAuditResult;
 use crate::modules::ports::{PortScanResult, PortScanner, EXTENDED_TARGET_PORTS};
 // EXPANDED_SUBDOMAINS removed v0.2
@@ -406,7 +406,7 @@ fn test_findings_engine_evaluates_telnet_and_open_resolver() {
         supports_tls13: true,
         issues: vec![],
     };
-    let geo = GeoComplianceResult {
+    let geo = GeoResult {
         ip_address: "1.2.3.4".into(),
         asn: Some("AS123".into()),
         org_name: Some("Host QC".into()),
@@ -782,7 +782,7 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
             issues: vec![],
         },
         vec![],
-        GeoComplianceResult {
+        GeoResult {
             ip_address: "157.208.25.18".into(),
             asn: Some("CC-3272".into()),
             org_name: Some("Cogeco".into()),

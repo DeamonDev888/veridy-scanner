@@ -7,7 +7,7 @@ use crate::modules::email_sec::EmailSecurityResult;
 use crate::modules::ffuf_audit::FfufAuditResult;
 use crate::modules::findings::SecurityFinding;
 use crate::modules::loot::LootResult;
-use crate::modules::geo::GeoComplianceResult;
+use crate::modules::geo::GeoResult;
 use crate::modules::http::HttpAuditResult;
 use crate::modules::nikto_deep::NiktoAuditResult;
 use crate::modules::nmap_deep::NmapAuditResult;
@@ -34,7 +34,7 @@ pub struct FullAuditReport {
     pub http: HttpAuditResult,
     pub tls: TlsAuditResult,
     pub subdomains: Vec<SubdomainResult>,
-    pub geo: GeoComplianceResult,
+    pub geo: GeoResult,
     pub email_sec: EmailSecurityResult,
     pub web_endpoints: WebEndpointsResult,
     pub dns_hardening: DnsHardeningResult,
@@ -71,7 +71,7 @@ impl FullAuditReport {
         http: HttpAuditResult,
         tls: TlsAuditResult,
         subdomains: Vec<SubdomainResult>,
-        geo: GeoComplianceResult,
+        geo: GeoResult,
         email_sec: EmailSecurityResult,
         web_endpoints: WebEndpointsResult,
         dns_hardening: DnsHardeningResult,

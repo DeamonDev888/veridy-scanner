@@ -1,7 +1,7 @@
 use crate::modules::dns::DnsAuditResult;
 use crate::modules::dns_hardening::DnsHardeningResult;
 use crate::modules::email_sec::EmailSecurityResult;
-use crate::modules::geo::GeoComplianceResult;
+use crate::modules::geo::GeoResult;
 use crate::modules::http::HttpAuditResult;
 use crate::modules::ports::PortScanResult;
 use crate::modules::subdomains::SubdomainResult;
@@ -37,7 +37,7 @@ impl FindingsEngine {
         http: &HttpAuditResult,
         tls: &TlsAuditResult,
         subdomains: &[SubdomainResult],
-        geo: &GeoComplianceResult,
+        geo: &GeoResult,
         email_sec: &EmailSecurityResult,
         web_endpoints: &WebEndpointsResult,
         dns_hardening: &DnsHardeningResult,
@@ -610,7 +610,7 @@ impl FindingsEngine {
     }
 
     /// 8. Localisation géographique de l'hébergement (informationnel uniquement).
-    fn eval_geo(geo: &GeoComplianceResult, dns: &DnsAuditResult) -> Vec<SecurityFinding> {
+    fn eval_geo(geo: &GeoResult, dns: &DnsAuditResult) -> Vec<SecurityFinding> {
         let mut findings = Vec::new();
         let is_private_ip = geo
             .ip_address

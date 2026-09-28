@@ -238,7 +238,7 @@ impl ObscuraAuditor {
                     "Obscura - {} anomalie(s) ou avertissement(s) console JS intercepté(s) lors du rendu",
                     res.console_warnings_count
                 ),
-                recommendation: "Inspecter la console navigateur du frontend pour éliminer les erreurs d'exécution JavaScript et les avertissements de conformité.".into(),
+                recommendation: "Inspecter la console navigateur du frontend pour éliminer les erreurs d’exécution JavaScript et les avertissements associés.".into(),
             });
         }
 

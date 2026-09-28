@@ -88,7 +88,7 @@ fn main() {
                 ">>> [POSTGRESQL] Audit approfondi 360° catalogué avec succès dans '{}' (Scan ID #{})",
                 config.db_name, id
             );
-            println!(">>> [POSTGRESQL] Tables enrichies (audit_scans, audit_findings, audit_tool_outputs, geo_compliance, etc.).");
+            println!(">>> [POSTGRESQL] Tables enrichies (audit_scans, audit_findings, audit_tool_outputs, audit_geo, etc.).");
         }
         println!();
     }
