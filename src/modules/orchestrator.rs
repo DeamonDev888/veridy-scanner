@@ -405,7 +405,7 @@ impl AuditOrchestrator {
         let geo_result = handle_geo.join().unwrap_or_default();
         let tls_result = handle_tls.join().unwrap_or_default();
         let dns_result = handle_dns.join().unwrap_or_default();
-        let subdomains_result = handle_subs.join().unwrap_or_default();
+        let mut subdomains_result = handle_subs.join().unwrap_or_default();
         let web_endpoints_result = handle_web.join().unwrap_or_default();
         let http_result = handle_http.join().unwrap_or_default();
         let vuln_result = handle_vuln.join().unwrap_or_default();
@@ -526,6 +526,12 @@ impl AuditOrchestrator {
         } else {
             None
         };
+
+        // Fusion httpx -> sous-domaines : un hote sonde vivant ne doit plus
+        // jamais ressortir muet dans le rapport ni en base (bug scan #269).
+        if let Some(ref hp) = httpx_result {
+            crate::modules::http_probe::merge_into_subdomains(&mut subdomains_result, hp);
+        }
 
         // SQLMap : dépend des endpoints découverts — tourne en fin de chaîne
         let sqli_result = if config.tools.sqlmap {

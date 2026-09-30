@@ -112,7 +112,7 @@ Chaque scan est **automatiquement persisté** dans une base PostgreSQL locale (`
 - `audit_dns_records`, `audit_ports`, `audit_http_headers`
 - `audit_tls_certs` (incluant `valid_from`, `is_self_signed`, `supports_tls10..13`)
 - `audit_subdomains`, `audit_findings`
-- `audit_geo_compliance`, `audit_email_sec`, `audit_web_endpoints`
+- `audit_geo`, `audit_email_sec`, `audit_web_endpoints`, `audit_tech` (composants versionnés + verdicts EOL), `audit_surface`
 - `audit_dns_hardening`, `audit_tool_outputs`
 
 ```bash

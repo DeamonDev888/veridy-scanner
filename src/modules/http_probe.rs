@@ -7,6 +7,10 @@ use std::process::Command;
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct HttpProbeResult {
     pub url: String,
+    /// Hote tel que soumis au probe (avant redirection) - cle de fusion.
+    pub input_host: Option<String>,
+    /// Premiere IP resolue (champ "a" du JSON httpx).
+    pub ip_address: Option<String>,
     pub status_code: Option<u16>,
     pub title: Option<String>,
     pub content_length: Option<usize>,
@@ -101,6 +105,15 @@ impl HttpProbe {
     pub fn parse_one(line: &str) -> Option<HttpProbeResult> {
         let v: serde_json::Value = serde_json::from_str(line).ok()?;
         let url = v.get("url")?.as_str()?.to_string();
+        let input_host = v
+            .get("input")
+            .and_then(|x| x.as_str())
+            .map(host_of)
+            .filter(|h| !h.is_empty());
+        let ip_address = v
+            .get("a")
+            .and_then(|x| x.as_array())
+            .and_then(|arr| arr.iter().find_map(|x| x.as_str().map(String::from)));
         let status_code = v
             .get("status_code")
             .and_then(|x| x.as_u64())
@@ -127,6 +140,8 @@ impl HttpProbe {
             .unwrap_or_default();
         Some(HttpProbeResult {
             url,
+            input_host,
+            ip_address,
             status_code,
             title,
             content_length,
@@ -145,6 +160,51 @@ impl HttpProbe {
             .filter(|r| seen.insert(r.url.clone()))
             .collect()
     }
+}
+
+/// Extrait l'hote (sans scheme/chemin/port) d'une URL ou d'un bare host.
+fn host_of(u: &str) -> String {
+    let no_scheme = u.split_once("://").map(|x| x.1).unwrap_or(u);
+    no_scheme
+        .split('/')
+        .next()
+        .unwrap_or(no_scheme)
+        .split(':')
+        .next()
+        .unwrap_or(no_scheme)
+        .to_string()
+}
+
+/// Fusionne les resultats httpx dans les sous-domaines decouverts :
+/// un hote avec status_code devient vivant (is_alive, http_status, IP).
+/// Sans cette etape, tous les hotes restent affiches muets en DB/rapport
+/// (bug scan #269 : 9/9 vivants declares morts).
+/// Retourne le nombre d'hotes confirmes vivants.
+pub fn merge_into_subdomains(
+    subs: &mut [crate::modules::subdomains::SubdomainResult],
+    probes: &[HttpProbeResult],
+) -> usize {
+    let mut updated = 0;
+    for sub in subs.iter_mut() {
+        let host = sub.subdomain.trim_end_matches('.').to_lowercase();
+        let probe = probes.iter().find(|r| {
+            r.input_host
+                .as_deref()
+                .map(|h| h.trim_end_matches('.').to_lowercase() == host)
+                .unwrap_or(false)
+        });
+        if let Some(r) = probe {
+            if let Some(st) = r.status_code {
+                sub.is_alive = true;
+                sub.http_status = Some(st);
+                if sub.ip_address.is_none() {
+                    sub.ip_address = r.ip_address.clone();
+                }
+                updated += 1;
+            }
+        }
+    }
+    updated
 }
 
 pub fn probe_parallel(targets: Vec<String>, chunk_size: usize) -> Vec<HttpProbeResult> {

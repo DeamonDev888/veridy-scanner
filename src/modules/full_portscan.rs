@@ -69,6 +69,14 @@ impl FullPortScanner {
             Arc::new((0..slots.max(1)).map(|_| AtomicU64::new(0)).collect());
         let cb = open_callback.map(Arc::new);
 
+        // BAIL-OUT counters (anti-blackhole): on compte timeouts et probes
+        // en live depuis chaque worker pour detecter une cible qui drop
+        // les SYN avant la fin de la passe 1 (un SYN-dropper peut sinon
+        // geler scan_all pendant 2 minutes).
+        let probed = Arc::new(AtomicU64::new(0));
+        let timeouts = Arc::new(AtomicU64::new(0));
+        let blackhole_flag = Arc::new(AtomicU64::new(0)); // 0=inconnu 1=blackhole
+
         let worker_count = 128usize;
         let next_port = Arc::new(AtomicU64::new(start as u64));
         let end_atomic = end as u64;
@@ -79,13 +87,34 @@ impl FullPortScanner {
             let next = Arc::clone(&next_port);
             let cb = cb.clone();
             let timeout = per_connect_timeout;
+            let probed_c = Arc::clone(&probed);
+            let timeouts_c = Arc::clone(&timeouts);
+            let blackhole_c = Arc::clone(&blackhole_flag);
             handles.push(thread::spawn(move || loop {
                 let p = next.fetch_add(1, Ordering::Relaxed);
                 if p > end_atomic {
                     break;
                 }
                 let port = p as u16;
+                // Bail-out check rapide toutes les 32 probes
+                let n = probed_c.fetch_add(1, Ordering::Relaxed) + 1;
+                if n.is_multiple_of(32) && blackhole_c.load(Ordering::Relaxed) == 0 {
+                    let pr = probed_c.load(Ordering::Relaxed);
+                    let to = timeouts_c.load(Ordering::Relaxed);
+                    // Seuil 98% (etait 90): notairetruchon.com drop ~95% SYN mais 6 ports cPanel repondent.
+                    if pr >= 64 && to * 100 / pr >= 98 {
+                        blackhole_c.store(1, Ordering::Relaxed);
+                        eprintln!("[full_portscan] blackhole live-detecte ({} timeouts / {} sondes) - workers sortiront apres probe courante", to, pr);
+                        // Faire en sorte que la boucle se termine bientot:
+                        // on saute end_atomic loin devant
+                        next.store(end_atomic + 1, Ordering::Relaxed);
+                        break;
+                    }
+                }
                 let state = probe(addr, port, timeout);
+                if state == PortState::Timeout {
+                    timeouts_c.fetch_add(1, Ordering::Relaxed);
+                }
                 set_state(&states, (port as usize) - (start as usize), state);
                 if state == PortState::Open {
                     if let Some(ref cb) = cb {
@@ -98,6 +127,63 @@ impl FullPortScanner {
             let _ = h.join();
         }
 
+        // BAIL-OUT post-passe (filet de securite si le live n'a pas detecte):
+        // si >90% des premieres 256 probes tombent en Timeout, sortie immediate
+        let probed_now = probed.load(Ordering::Relaxed);
+        let timeouts_now = timeouts.load(Ordering::Relaxed);
+        let blackhole_now = blackhole_flag.load(Ordering::Relaxed) == 1
+            // Filet: seuil 98 (aligne avec live-detector)
+            || (probed_now >= 256 && timeouts_now * 100 / probed_now.max(1) >= 98);
+        if blackhole_now {
+            let mut results = Vec::new();
+            for p in start..=end {
+                if get_state(&states, (p as usize) - (start as usize)) == PortState::Open {
+                    let banner = grab_banner(addr, p);
+                    results.push(FullPortScanResult {
+                        port: p,
+                        is_open: true,
+                        service_hint: crate::modules::ports::PortScanner::guess_service(p),
+                        banner,
+                    });
+                }
+            }
+            eprintln!("[full_portscan] bail-out final: {} probes, {} timeouts, {} ouverts",
+                probed_now, timeouts_now, results.len());
+            return results;
+        }
+
+        // BAIL-OUT anti-blackhole: si plus de 80% des premiers 200 ports
+        // sondes tombent en Timeout, la cible drop les SYN silencieusement
+        // (VPS OVH ou firewall stateless). On arrete la 2e passe et on
+        // rend les ouverts trouves - un SYN-dropper peut sinon geler le
+        // scan pendant 20 minutes.
+        let probe_window = total.min(200);
+        let mut probed: usize = 0;
+        let mut timeouts: usize = 0;
+        for i in 0..probe_window {
+            match get_state(&states, i) {
+                PortState::Timeout => { timeouts += 1; probed += 1; }
+                PortState::Open | PortState::Closed => { probed += 1; }
+            }
+        }
+        let blackhole = probed >= 50 && (timeouts * 100 / probed.max(1)) >= 80;
+        if blackhole {
+            eprintln!("[full_portscan] blackhole detecte ({} timeouts sur {} sondes) - bail-out, skip 2e passe", timeouts, probed);
+            let mut results = Vec::new();
+            for p in start..=end {
+                if get_state(&states, (p as usize) - (start as usize)) == PortState::Open {
+                    let banner = grab_banner(addr, p);
+                    results.push(FullPortScanResult {
+                        port: p,
+                        is_open: true,
+                        service_hint: crate::modules::ports::PortScanner::guess_service(p),
+                        banner,
+                    });
+                }
+            }
+            return results;
+        }
+
         // Seconde passe : les timeouts (ports filtrés/lents) retentés une fois.
         let next_port = Arc::new(AtomicU64::new(start as u64));
         let mut handles = Vec::with_capacity(worker_count);
@@ -105,7 +191,8 @@ impl FullPortScanner {
             let states = Arc::clone(&states);
             let next = Arc::clone(&next_port);
             let cb = cb.clone();
-            let timeout = per_connect_timeout * 2;
+            // 2e passe: meme timeout que la 1ere (etait *2 inutilement).
+            let timeout = per_connect_timeout;
             handles.push(thread::spawn(move || loop {
                 let p = next.fetch_add(1, Ordering::Relaxed);
                 if p > end_atomic {

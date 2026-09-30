@@ -7,6 +7,10 @@ use std::time::Instant;
 pub struct WafResult {
     pub success: bool,
     pub elapsed_seconds: f32,
+    /// Challenge edge detecte sur un port non standard (2083/2087/2096...) :
+    /// page "One moment..." / cf-mitigated / __cf_chl. Lecons 8brains.ca :
+    /// wafw00f sur 80/443 disait "aucun WAF" alors que tout etait proxifie.
+    pub edge_challenge_ports: Vec<u16>,
     pub waf_detected: bool,
     pub firewall_name: String,
     pub manufacturer: String,
@@ -41,6 +45,7 @@ impl WafAuditor {
                 return WafResult {
                     success: false,
                     elapsed_seconds: start.elapsed().as_secs_f32(),
+                    edge_challenge_ports: Vec::new(),
                     waf_detected: false,
                     firewall_name: "None".into(),
                     manufacturer: "None".into(),
@@ -61,10 +66,27 @@ impl WafAuditor {
         let manufacturer =
             extract_json_str(&raw_json, "manufacturer").unwrap_or_else(|| "None".to_string());
 
+        // Multi-ports : wafw00f ne voit que le port principal ; les panneaux
+        // d'admin (cPanel/WHM/webmail) sont souvent derriere un edge challenge.
+        let host_only = hostport.split(':').next().unwrap_or(&hostport).to_string();
+        let edge_challenge_ports = Self::probe_edge_challenges(&host_only);
+        let edge_active = !edge_challenge_ports.is_empty();
+
         let summary = if waf_detected {
             format!(
                 "WAF détecté : {} ({}) en {:.2}s",
                 firewall_name, manufacturer, elapsed
+            )
+        } else if edge_active {
+            let ports_str = edge_challenge_ports
+                .iter()
+                .map(|p| p.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "Challenge edge (type Cloudflare) actif sur {} port(s) non standard : {}",
+                edge_challenge_ports.len(),
+                ports_str
             )
         } else {
             format!(
@@ -74,14 +96,65 @@ impl WafAuditor {
         };
 
         WafResult {
-            success: output.status.success(),
+            success: output.status.success() || edge_active,
             elapsed_seconds: elapsed,
-            waf_detected,
-            firewall_name,
+            waf_detected: waf_detected || edge_active,
+            edge_challenge_ports,
+            firewall_name: if waf_detected {
+                firewall_name
+            } else if edge_active {
+                "Edge Challenge (Cloudflare-like)".to_string()
+            } else {
+                firewall_name
+            },
             manufacturer,
             raw_output: raw_json,
             summary,
         }
+    }
+
+
+    /// Sonde passive multi-ports : GET / sur 2083/2087/2096 (et 2082/2086/2095
+    /// en http) et cherche les marqueurs de challenge edge. 1 requete par port.
+    fn probe_edge_challenges(host: &str) -> Vec<u16> {
+        let probes: &[(u16, &str)] = &[
+            (2083, "https"),
+            (2087, "https"),
+            (2096, "https"),
+            (2082, "http"),
+            (2086, "http"),
+            (2095, "http"),
+        ];
+        let mut hit = Vec::new();
+        for (port, scheme) in probes {
+            // -i : headers INCLUS dans stdout (le marqueur "One moment" vit
+            // dans le BODY du challenge JS — -o /dev/null le jetait).
+            let out = crate::utils::run_tool(
+                "curl",
+                &[
+                    "-ski",
+                    "--max-time",
+                    "6",
+                    &format!("{scheme}://{host}:{port}/"),
+                ],
+                10,
+            );
+            let Some(o) = out else { continue };
+            let s = String::from_utf8_lossy(&o.stdout).to_string();
+            let lower = s.to_lowercase();
+            // Marqueurs : challenge JS (titre classique), headers Cloudflare/edge
+            let challenged = lower.contains("one moment")
+                || lower.contains("cf-mitigated")
+                || lower.contains("__cf_chl")
+                || lower.contains("cf-ray")
+                || lower.contains("cloudflare")
+                || lower.contains("attention required")
+                || lower.contains("checking your browser");
+            if challenged {
+                hit.push(*port);
+            }
+        }
+        hit
     }
 
     pub fn to_findings(&self, res: &WafResult) -> Vec<SecurityFinding> {

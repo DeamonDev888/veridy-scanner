@@ -185,6 +185,20 @@ impl DnsAuditor {
         result
     }
 
+    /// Domaine registrable approx : retire le premier label d'un sous-domaine
+    /// (www.jeancoutu.com -> jeancoutu.com). 2 labels ou moins = inchangé.
+    /// Approximation conservatrice (pas de PSL embarquée) : le fallback apex
+    /// ne s'active que si TXT/DMARC manquent sur le hostname ET existent sur
+    /// le parent direct.
+    fn registrable_domain(domain: &str) -> String {
+        let labels: Vec<&str> = domain.split('.').filter(|l| !l.is_empty()).collect();
+        if labels.len() >= 3 {
+            labels[1..].join(".")
+        } else {
+            domain.to_string()
+        }
+    }
+
     fn enrich_via_dig(domain: &str, result: &mut DnsAuditResult) {
         // MX natif UDP
         let mut got_mx_records: Vec<String> = Vec::new();
@@ -351,8 +365,64 @@ impl DnsAuditor {
             }
         }
 
-        // DMARC (_dmarc.domain)
-        let dmarc_target = format!("_dmarc.{}", domain);
+                // Fallback apex : un sous-domaine (www.) n'héberge presque jamais le
+        // SPF — la politique vit sur le domaine registrable. Évite le faux
+        // positif « SPF absent » (vérifié live : www.jeancoutu.com muet,
+        // apex = v=spf1 + DMARC p=reject).
+        if result.txt_records.is_empty() {
+            let apex = Self::registrable_domain(domain);
+            if apex != domain {
+                let mut apex_txt: Vec<String> = Vec::new();
+                if let Some(ans) = crate::modules::netdns::query(
+                    &apex,
+                    "TXT",
+                    std::time::Duration::from_secs(2),
+                ) {
+                    for (v, _) in &ans.answers {
+                        let t = v.trim().trim_matches('"').to_string();
+                        if !t.is_empty() {
+                            apex_txt.push(t);
+                        }
+                    }
+                }
+                if apex_txt.is_empty() {
+                    if let Some(output) = crate::utils::run_tool(
+                        "dig",
+                        &["+short", "+time=2", "+tries=1", "TXT", &apex],
+                        8,
+                    ) {
+                        for line in String::from_utf8_lossy(&output.stdout).lines() {
+                            let trimmed = line.trim().trim_matches('"');
+                            if !trimmed.is_empty() {
+                                apex_txt.push(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+                for t in apex_txt {
+                    result.txt_records.push(t.clone());
+                    result.all_records.push(DnsRecordEntry {
+                        record_type: "TXT".to_string(),
+                        value: format!("[apex {apex}] {t}"),
+                        is_secure: false,
+                    });
+                }
+            }
+        }
+
+// DMARC (_dmarc.domain) — hostname PUIS apex en fallback : la politique
+        // DMARC vit au niveau organizational (presque jamais sur www.).
+        // Vérifié live : www.jeancoutu.com muet, apex = p=reject.
+        let dmarc_candidates = {
+            let apex = Self::registrable_domain(domain);
+            if apex != domain {
+                vec![domain.to_string(), apex]
+            } else {
+                vec![domain.to_string()]
+            }
+        };
+        'outer: for cand in &dmarc_candidates {
+            let dmarc_target = format!("_dmarc.{}", cand);
         if let Some(output) = crate::utils::run_tool(
             "dig",
             &["+short", "+time=2", "+tries=1", "TXT", &dmarc_target],
@@ -372,14 +442,20 @@ impl DnsAuditor {
                         }
                     }
 
+                    let tagged = if cand != domain {
+                        format!("[apex {cand}] {clean}")
+                    } else {
+                        clean.to_string()
+                    };
                     result.all_records.push(DnsRecordEntry {
                         record_type: "DMARC".to_string(),
-                        value: clean.to_string(),
+                        value: tagged,
                         is_secure: false,
                     });
-                    break;
+                    break 'outer;
                 }
             }
+        }
         }
     }
 }

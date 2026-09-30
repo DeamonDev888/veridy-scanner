@@ -47,6 +47,7 @@ pub fn extract_json_str(json: &str, key: &str) -> Option<String> {
 }
 
 /// Extrait une valeur numérique depuis une portion de JSON
+#[allow(dead_code)]
 pub fn extract_json_num<T: FromStr>(json: &str, key: &str) -> Option<T> {
     let pattern = format!("\"{}\":", key);
     if let Some(pos) = json.find(&pattern) {

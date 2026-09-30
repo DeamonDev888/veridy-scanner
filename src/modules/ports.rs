@@ -26,6 +26,13 @@ pub struct PortScanResult {
     pub is_open: bool,
     pub service_hint: &'static str,
     pub banner: Option<String>,
+    /// Artefact d'edge/WAF : l'edge accepte TCP et répond HTTP uniformément
+    /// (ou reste muet) sur un port non-HTTP — aucun service réel n'est prouvé
+    /// derrière. Les findings correspondants sont downgradés INFO (cf.
+    /// detect_uniform_edge, même principe que le downgrade loopback : ne pas
+    /// empoisonner le score avec des artefacts d'edge).
+    #[serde(default)]
+    pub is_phantom_edge: bool,
 }
 
 pub struct PortScanner;
@@ -139,7 +146,65 @@ impl PortScanner {
         let mut open_results: Vec<PortScanResult> = res_rx.into_iter().collect();
         open_results.sort_by_key(|r| r.port);
         open_results.dedup_by_key(|r| r.port);
+        Self::detect_uniform_edge(&mut open_results);
         open_results
+    }
+
+    /// Seuil d'uniformité : nombre minimal de ports NON web répondant la
+    /// même ligne de statut HTTP 4xx pour conclure « edge répond partout ».
+    pub const EDGE_UNIFORM_MIN: usize = 3;
+
+    /// Détection « edge uniforme » (baseline soft-404 façon ffuf, signature
+    /// statut HTTP) : si au moins [`EDGE_UNIFORM_MIN`] ports non web répondent
+    /// la MÊME ligne de statut HTTP 4xx à la sonde litmus, l'hôte est derrière
+    /// un edge qui parle HTTP sur tout — les ports non web sont alors des
+    /// artefacts de scan, qu'ils aient répondu HTTP 4xx (candidats directs)
+    /// ou qu'ils soient restés muets : FTP/SSH/SMTP/MySQL parlent TOUJOURS
+    /// en premier, donc un port non web silencieux derrière un edge confirmé
+    /// n'est pas un service prouvé.
+    ///
+    /// Un service HTTP réel isolé sur un port exotique (ex. Docker sur 2375)
+    /// répond aussi 400, mais il est seul : sous le seuil, pas de marquage.
+    pub fn detect_uniform_edge(results: &mut [PortScanResult]) {
+        use std::collections::HashMap;
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for r in results.iter() {
+            if !Self::titles_probe_worthy(r.port) {
+                if let Some(sig) = http4xx_status_line(r.banner.as_deref()) {
+                    *counts.entry(sig).or_default() += 1;
+                }
+            }
+        }
+        let edge_confirmed = counts.values().any(|&n| n >= Self::EDGE_UNIFORM_MIN);
+        if !edge_confirmed {
+            return;
+        }
+        for r in results.iter_mut() {
+            if Self::titles_probe_worthy(r.port) {
+                continue;
+            }
+            let http_artifact = http4xx_status_line(r.banner.as_deref()).is_some();
+            let silent = r.banner.is_none();
+            if http_artifact || silent {
+                r.is_phantom_edge = true;
+            }
+        }
+    }
+}
+
+/// Extrait la signature « proto code » d'une bannière SI c'est une réponse
+/// HTTP 4xx générique (le litmus : un service non-HTTP ne répond jamais HTTP).
+/// « HTTP/1.1 400 Bad Request » -> Some("HTTP/1.1 400") ; bannière de service
+/// réel (SSH, 220-FTP, greeting mysqld) ou 2xx/3xx -> None.
+pub fn http4xx_status_line(banner: Option<&str>) -> Option<String> {
+    let first = banner?.lines().next()?.trim();
+    let mut parts = first.split_whitespace();
+    let proto = parts.next()?;
+    let code: u16 = parts.next()?.parse().ok()?;
+    if proto.starts_with("HTTP/") && (400..=499).contains(&code) {
+        Some(format!("{} {}", proto, code))
+    } else {
+        None
     }
 }
 
@@ -186,11 +251,43 @@ fn probe_port(target: &str, port: u16, timeout: Duration) -> Option<PortScanResu
                     }
                 }
 
+                // Sonde litmus anti-edge : sur un port NON web resté muet, on
+                // envoie une trame binaire RDP Negotiation. Un vrai service
+                // répond dans SON protocole (bannière 220/SSH/mysqld déjà vus
+                // plus haut, erreur Redis, réponse RDP binaire) ; seul un
+                // edge/WAF qui parle HTTP partout répond « HTTP/1.1 4xx »
+                // (capturé en conditions réelles : Imperva/Incapsula renvoie
+                // 400 + X-Iinfo sur :3389/:6379/:8080 d'uniprix.com). Le port
+                // devient CANDIDAT edge — confirmé seulement par uniformité
+                // (cf. detect_uniform_edge), jamais sur une réponse isolée.
+                if banner.is_none() && !PortScanner::titles_probe_worthy(port) {
+                    const RDP_NEG: [u8; 19] = [
+                        0x03, 0x00, 0x00, 0x13, 0x0e, 0xe0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+                        0x00, 0x08, 0x00, 0x03, 0x00, 0x00, 0x00,
+                    ];
+                    if stream.write_all(&RDP_NEG).is_ok() {
+                        if let Ok(n) = stream.read(&mut buf) {
+                            if n > 0 {
+                                let s = String::from_utf8_lossy(&buf[..n])
+                                    .lines()
+                                    .next()
+                                    .unwrap_or("")
+                                    .trim()
+                                    .to_string();
+                                if !s.is_empty() {
+                                    banner = Some(s);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 return Some(PortScanResult {
                     port,
                     is_open: true,
                     service_hint: PortScanner::guess_service(port),
                     banner,
+                    is_phantom_edge: false,
                 });
             }
         }

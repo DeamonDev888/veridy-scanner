@@ -13,6 +13,9 @@ pub struct DnsreconSrv {
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct DnsreconResult {
+    /// A-records des sous-domaines du domaine audite (lecons 8brains.ca :
+    /// ftp./whm./autoconfig. visibles par dnsrecon std mais jamais fusionnes).
+    pub host_records: Vec<(String, String)>,
     pub srv_records: Vec<DnsreconSrv>,
     pub bind_versions: Vec<(String, String)>,
     pub nameservers: Vec<String>,
@@ -59,6 +62,17 @@ impl DnsreconAuditor {
                 let r_type = extract_json_str(&obj, "type").unwrap_or_default();
 
                 match r_type.as_str() {
+                    "A" => {
+                        let domain_str = extract_json_str(&obj, "domain").unwrap_or_default();
+                        let address = extract_json_str(&obj, "address").unwrap_or_default();
+                        if !domain_str.is_empty()
+                            && !address.is_empty()
+                            && domain_str.ends_with(domain)
+                            && !result.host_records.contains(&(domain_str.clone(), address.clone()))
+                        {
+                            result.host_records.push((domain_str, address));
+                        }
+                    }
                     "SRV" => {
                         let target = extract_json_str(&obj, "target").unwrap_or_default();
                         let address = extract_json_str(&obj, "address").unwrap_or_default();

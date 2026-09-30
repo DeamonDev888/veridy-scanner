@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::modules::brand_sec::BrandSecAuditor;
+use crate::modules::ftp_audit::FtpAuditor;
 use crate::modules::dns::DnsAuditor;
 use crate::modules::dns_hardening::DnsHardeningAuditor;
 use crate::modules::dnsrecon_audit::DnsreconAuditor;
@@ -260,14 +261,16 @@ impl AuditOrchestrator {
             None
         };
 
+        let ww_ports = config.custom_ports.clone().unwrap_or_default();
         let handle_whatweb = if let Some(idx) = idx_whatweb {
             let tracker_c = Arc::clone(&tracker);
             let t = target.clone();
+            let ww_ports = ww_ports.clone();
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Empreinte CMS, librairies JS & adresses emails...");
                 run_guarded(t0, &tracker_c, idx, "WhatWeb", || {
-                    TechStackAuditor::audit(&t)
+                    TechStackAuditor::audit(&t, &ww_ports)
                 })
             }))
         } else {
@@ -406,9 +409,12 @@ impl AuditOrchestrator {
                     // (rustscan externe s est montré non-déterministe : ports
                     // sautés selon les runs). Le natif couvre les 65535 en ~5 s.
                     let start = Instant::now();
+                    // Timeout reduit (etait 1200ms = bloquait 60s+ sur cible
+                    // qui drop les SYN). Avec bail-out live (90% timeout) +
+                    // 300ms/port, scan termine en <20s meme sur blackhole.
                     let results = crate::modules::full_portscan::FullPortScanner::scan_all(
                         &t,
-                        Duration::from_millis(1200),
+                        Duration::from_millis(300),
                         None::<fn(u16)>,
                     );
                     let mut open_ports: Vec<u16> = results.iter().map(|r| r.port).collect();
@@ -434,11 +440,42 @@ impl AuditOrchestrator {
 
         let rustscan_result = handle_rustscan.map(|h| h.join().unwrap_or_default());
         // 4. Récupération des résultats Core
-        let port_results = handle_ports.join().unwrap_or_default();
+        let mut port_results = handle_ports.join().unwrap_or_default();
+        // FTP audit (ftpx + ftplx) : declenche uniquement si port 21 detecte.
+        // Synchrone : le module est rapide (~10s max). Aucun thread supplementaire.
+        let ftp_audit_result = if FtpAuditor::should_audit(target, &port_results) {
+            Some(FtpAuditor::audit(target))
+        } else {
+            None
+        };
+        // Fusion RustScan -> Core : les ports vus uniquement par le balayage
+        // 65535 doivent finir dans le rapport [5], audit_ports ET
+        // open_ports_count (bug scan #269 : 30 ouverts, 11 en DB).
+        if let Some(ref rs) = rustscan_result {
+            if rs.success {
+                for p in &rs.open_ports {
+                    if !port_results.iter().any(|cp| cp.port == *p) {
+                        port_results.push(crate::modules::ports::PortScanResult {
+                            port: *p,
+                            is_open: true,
+                            service_hint: crate::modules::ports::PortScanner::guess_service(*p),
+                            banner: None,
+                            is_phantom_edge: false,
+                        });
+                    }
+                }
+                port_results.sort_unstable_by_key(|p| p.port);
+                // Re-applique la detection edge-uniforme sur l'ensemble fusionne
+                // (core + rustscan) : les ports vus par rustscan seul n'ont pas
+                // ete sonde par le litmus, mais un edge deja confirme les
+                // couvre aussi (port non web muet = artefact).
+                crate::modules::ports::PortScanner::detect_uniform_edge(&mut port_results);
+            }
+        }
         let geo_result = handle_geo.join().unwrap_or_default();
         let tls_result = handle_tls.join().unwrap_or_default();
         let dns_result = handle_dns.join().unwrap_or_default();
-        let subdomains_result = handle_subs.join().unwrap_or_default();
+        let mut subdomains_result = handle_subs.join().unwrap_or_default();
         let web_endpoints_result = handle_web.join().unwrap_or_default();
         let http_result = handle_http.join().unwrap_or_default();
         let vuln_result = handle_vuln.join().unwrap_or_default();
@@ -529,6 +566,9 @@ impl AuditOrchestrator {
         let nikto_result = handle_nikto.map(|h| h.join().unwrap_or_default());
         let whois_result = handle_whois.map(|h| h.join().unwrap_or_default());
         let dnsrecon_result = handle_dnsrecon.map(|h| h.join().unwrap_or_default());
+        // crt.sh (Certificate Transparency) : passif, 1 requete, tourne meme
+        // sans module actif -- sous-domaines historiques invisibles ailleurs.
+        let crt_sh_result = crate::modules::crt_sh::CrtShAuditor::audit(target);
         let theharvester_result = handle_theharvester.map(|h| h.join().unwrap_or_default());
         let obscura_result = handle_obscura.map(|h| h.join().unwrap_or_default());
 
@@ -555,6 +595,43 @@ impl AuditOrchestrator {
         } else {
             None
         };
+
+        // Fusion dnsrecon -> sous-domaines : les A-records des hotes du
+        // domaine (ftp./whm./autoconfig.) enrichissent la cartographie.
+        if let Some(ref dr) = dnsrecon_result {
+            for (host, ip) in &dr.host_records {
+                if let Some(sub) = subdomains_result
+                    .iter_mut()
+                    .find(|s| s.subdomain.eq_ignore_ascii_case(host))
+                {
+                    if sub.ip_address.is_none() {
+                        sub.ip_address = Some(ip.clone());
+                    }
+                } else {
+                    subdomains_result.push(crate::modules::subdomains::SubdomainResult {
+                        subdomain: host.clone(),
+                        source: "dnsrecon".into(),
+                        ip_address: Some(ip.clone()),
+                        http_status: None,
+                        is_alive: false,
+                    });
+                }
+            }
+        }
+        // Fusion crt.sh -> sous-domaines : les hotes historiques (certs CT)
+        // sont ajoutes s'ils ne sont pas deja connus (source = crt.sh).
+        let crt_added = crate::modules::crt_sh::CrtShAuditor::merge_into(&mut subdomains_result, &crt_sh_result);
+        if crt_added > 0 {
+            println!(
+                ">>> [CRT.SH] {crt_added} sous-domaine(s) historique(s) ajouté(s) via Certificate Transparency"
+            );
+        }
+
+        // Fusion httpx -> sous-domaines : un hôte sondé vivant ne doit plus
+        // jamais ressortir muet dans le rapport ni en base (bug scan #269).
+        if let Some(ref hp) = httpx_result {
+            crate::modules::http_probe::merge_into_subdomains(&mut subdomains_result, hp);
+        }
 
         // SQLMap : dépend des endpoints découverts — tourne en fin de chaîne
         let sqli_result = if config.tools.sqlmap {
@@ -657,6 +734,9 @@ impl AuditOrchestrator {
         }
         if let Some(ref bs) = dnstwist_result {
             findings.extend(BrandSecAuditor.to_findings(bs));
+        }
+        if let Some(ref ftp) = ftp_audit_result {
+            findings.extend(FtpAuditor.to_findings(ftp));
         }
         if let Some(ref ff) = ffuf_result {
             findings.extend(FfufAuditor.to_findings(ff));
@@ -773,6 +853,7 @@ impl AuditOrchestrator {
             whatweb_result,
             sslscan_result,
             dnstwist_result,
+            ftp_audit_result,
             ffuf_result,
             whois_result,
             dnsrecon_result,

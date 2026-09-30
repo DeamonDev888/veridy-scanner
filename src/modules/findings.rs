@@ -162,7 +162,40 @@ impl FindingsEngine {
     /// 2. Audit Ports & Services (bannières, ports à risque, bases de données).
     fn eval_ports(ports: &[PortScanResult], target_domain: &str) -> Vec<SecurityFinding> {
         let mut findings = Vec::new();
+        // Artefacts d'edge uniforme : un UNIQUE finding INFO agrege (jamais
+        // de HIGH fantomes — l'edge accepte TCP et parle HTTP partout, aucun
+        // service reel n'est prouve). Meme principe que le downgrade loopback :
+        // ne pas empoisonner le score avec des artefacts d'edge.
+        let phantom: Vec<u16> = ports
+            .iter()
+            .filter(|p| p.is_phantom_edge)
+            .map(|p| p.port)
+            .collect();
+        if !phantom.is_empty() {
+            let shown: Vec<String> = phantom.iter().take(15).map(|p| p.to_string()).collect();
+            let more = phantom.len() - shown.len();
+            let listing = if more > 0 {
+                format!("{} …(+{} autres)", shown.join(", "), more)
+            } else {
+                shown.join(", ")
+            };
+            findings.push(SecurityFinding {
+                severity: "INFO",
+                category: "PORT",
+                title: format!(
+                    "{} port(s) sans service confirmé — l'edge répond uniformément (HTTP 4xx générique) : {}",
+                    phantom.len(),
+                    listing
+                ),
+                recommendation:
+                    "L'edge/WAF accepte les connexions TCP et répond HTTP sur des ports non-HTTP : aucun service réel n'est prouvé derrière. Pour confirmer un service, sonder avec un client protocole dédié au-delà de l'edge (IP d'origine)."
+                        .into(),
+            });
+        }
         for p in ports {
+            if p.is_phantom_edge {
+                continue;
+            }
             // Bannière de service : version logicielle + empreinte OS divulgées
             if let Some(ref b) = p.banner {
                 let b = b.trim();
@@ -505,12 +538,25 @@ impl FindingsEngine {
         }
 
         if web_endpoints.dangerous_methods_found {
+            // TRACE annoncé mais non réfléchi (501/405) = annonce morte : LOW.
+            // Exception PUT/DELETE : méthodes actives dangereuses, HIGH conservé.
+            let trace_only_dead = web_endpoints.trace_reflected == Some(false)
+                && !web_endpoints
+                    .allowed_http_methods
+                    .iter()
+                    .any(|m| m == "PUT" || m == "DELETE" || m == "TRACK");
+            let (sev, extra) = if trace_only_dead {
+                ("LOW", " (TRACE annoncé dans Allow: mais non réfléchi par le serveur)")
+            } else {
+                ("HIGH", "")
+            };
             findings.push(SecurityFinding {
-                severity: "HIGH",
+                severity: sev,
                 category: "WEB",
                 title: format!(
-                    "Méthodes HTTP potentiellement dangereuses activées : {}",
-                    web_endpoints.allowed_http_methods.join(", ")
+                    "Méthodes HTTP potentiellement dangereuses activées : {}{}",
+                    web_endpoints.allowed_http_methods.join(", "),
+                    extra
                 ),
                 recommendation: "Désactiver TRACE, TRACK, PUT, DELETE au niveau de la configuration du serveur Web.".into(),
             });
@@ -535,13 +581,37 @@ impl FindingsEngine {
                         .into(),
             });
         } else if !tls.is_valid {
-            findings.push(SecurityFinding {
-                severity: "CRITICAL",
-                category: "TLS",
-                title: "Chaîne de confiance du certificat TLS invalide ou compromise".into(),
-                recommendation:
-                    "Renouveler immédiatement le certificat auprès d'une autorité reconnue.".into(),
+            // Discrimination des erreurs de vérification (fix faux positif
+            // archambault.ca 2026-09-30) : « unable to get local issuer » /
+            // « unable to verify the first certificate » = le serveur ne SERT
+            // PAS l'intermédiaire (chaîne incomplète). Le certificat lui-même
+            // se valide très bien avec l'intermédiaire récupéré (AIA) :
+            // openssl verify -untrusted <inter> leaf -> OK. Ce n'est PAS une
+            // chaîne « compromise » : downgrade MEDIUM config serveur.
+            let incomplete_chain = tls.issues.iter().any(|i| {
+                i.contains("unable to get local issuer")
+                    || i.contains("unable to verify the first certificate")
             });
+            if incomplete_chain {
+                findings.push(SecurityFinding {
+                    severity: "MEDIUM",
+                    category: "TLS",
+                    title:
+                        "Chaîne TLS incomplète : le certificat intermédiaire n'est pas servi par le serveur"
+                            .into(),
+                    recommendation:
+                        "Servir la chaîne complète (feuille + intermédiaires, ex. fullchain.pem) : les clients sans récupération AIA (curl, Python, certains SDK) échouent la validation."
+                            .into(),
+                });
+            } else {
+                findings.push(SecurityFinding {
+                    severity: "CRITICAL",
+                    category: "TLS",
+                    title: "Chaîne de confiance du certificat TLS invalide ou compromise".into(),
+                    recommendation:
+                        "Renouveler immédiatement le certificat auprès d'une autorité reconnue.".into(),
+                });
+            }
         }
 
         if tls.supports_tls10 || tls.supports_tls11 {
@@ -734,6 +804,125 @@ mod tests {
 
     // --- Tests unitaires des sous-évaluateurs isolés (refactor evaluate) ---
 
+    // --- Fix nuit 2026-09-30 : edge uniforme (phantom ports) ---
+    // Fixture reelle capturee sur uniprix.com (edge Imperva/Incapsula) : la
+    // sonde RDP binaire sur :3389 renvoie « HTTP/1.1 400 Bad Request ...
+    // X-Iinfo: ... _Incapsula_Resource » — l edge parle HTTP sur un port RDP.
+    const IMPERVA_400: &str = "HTTP/1.1 400 Bad Request";
+    const MYSQL_ACL_ERR: &str =
+        "Host x is not allowed to connect to this MySQL server";
+
+    #[test]
+    fn test_http4xx_status_line_signature() {
+        use crate::modules::ports::{http4xx_status_line, PortScanner};
+        // Litmus : seule une reponse HTTP 4xx est une signature d edge
+        assert_eq!(
+            http4xx_status_line(Some(IMPERVA_400)).as_deref(),
+            Some("HTTP/1.1 400")
+        );
+        assert_eq!(http4xx_status_line(Some("HTTP/1.0 403 Forbidden")).as_deref(), Some("HTTP/1.0 403"));
+        // Bannieres de VRAIS services : jamais une signature
+        assert_eq!(http4xx_status_line(Some(MYSQL_ACL_ERR)), None);
+        assert_eq!(http4xx_status_line(Some("220- Pure-FTPd [TLS]")), None);
+        assert_eq!(http4xx_status_line(Some("SSH-2.0-OpenSSH_9.2")), None);
+        // 2xx/3xx sur port exotique = service HTTP reel, pas un artefact
+        assert_eq!(http4xx_status_line(Some("HTTP/1.1 200 OK")), None);
+        assert_eq!(http4xx_status_line(None), None);
+        let _ = PortScanner::EDGE_UNIFORM_MIN; // rend le seuil visible
+    }
+
+    #[test]
+    fn test_uniform_edge_downgrades_and_aggregates() {
+        use crate::modules::ports::{PortScanResult, PortScanner};
+        // Reproduit uniprix.com : 3+ ports non-web 400 identiques + ports
+        // muets (21/3306 silencieux) + 2 ports web legitimes (80/443).
+        let mut ports = vec![
+            PortScanResult { port: 80, is_open: true, service_hint: "HTTP", banner: Some("HTTP/1.1 301".into()), is_phantom_edge: false },
+            PortScanResult { port: 443, is_open: true, service_hint: "HTTPS", banner: None, is_phantom_edge: false },
+            PortScanResult { port: 3306, is_open: true, service_hint: "MySQL", banner: Some(IMPERVA_400.into()), is_phantom_edge: false },
+            PortScanResult { port: 6379, is_open: true, service_hint: "Redis", banner: Some(IMPERVA_400.into()), is_phantom_edge: false },
+            PortScanResult { port: 3389, is_open: true, service_hint: "RDP", banner: Some(IMPERVA_400.into()), is_phantom_edge: false },
+            PortScanResult { port: 21, is_open: true, service_hint: "FTP", banner: None, is_phantom_edge: false },
+        ];
+        PortScanner::detect_uniform_edge(&mut ports);
+        // Edge confirme : ports non-web 400 + muets marques fantomes
+        assert!(ports.iter().find(|p| p.port == 3306).unwrap().is_phantom_edge);
+        assert!(ports.iter().find(|p| p.port == 6379).unwrap().is_phantom_edge);
+        assert!(ports.iter().find(|p| p.port == 3389).unwrap().is_phantom_edge);
+        assert!(ports.iter().find(|p| p.port == 21).unwrap().is_phantom_edge);
+        // Ports web legitimes jamais touches
+        assert!(!ports.iter().find(|p| p.port == 80).unwrap().is_phantom_edge);
+        assert!(!ports.iter().find(|p| p.port == 443).unwrap().is_phantom_edge);
+        // Findings : PLUS AUCUN HIGH fantome, un seul INFO agrege
+        let f = FindingsEngine::eval_ports(&ports, "uniprix.com");
+        assert!(f.iter().all(|x| x.severity == "INFO" || x.severity == "LOW"), "findings: {f:?}");
+        let agg = f.iter().find(|x| x.title.contains("edge répond uniformément"));
+        assert!(agg.is_some(), "finding INFO agrege absent: {f:?}");
+        assert_eq!(agg.unwrap().severity, "INFO");
+    }
+
+    #[test]
+    fn test_uniform_edge_not_triggered_below_threshold() {
+        use crate::modules::ports::PortScanResult;
+        let mut ports = vec![
+            PortScanResult { port: 2375, is_open: true, service_hint: "Docker", banner: Some("HTTP/1.1 400 Bad Request".into()), is_phantom_edge: false },
+        ];
+        crate::modules::ports::PortScanner::detect_uniform_edge(&mut ports);
+        // 1 seul port 400 : sous le seuil (EDGE_UNIFORM_MIN=3), pas de marquage
+        assert!(!ports[0].is_phantom_edge);
+        let f = FindingsEngine::eval_ports(&ports, "example.com");
+        assert!(!f.iter().any(|x| x.title.contains("edge répond uniformément")));
+    }
+
+    #[test]
+    fn test_real_mysql_not_flagged_phantom() {
+        use crate::modules::ports::{PortScanResult, PortScanner};
+        // Vrai mysqld (sunyouth/cegepgarneau capture) : la banniere ACL MySQL
+        // n est PAS une signature HTTP -> jamais fantome, finding HIGH conserve.
+        let mut ports = vec![
+            PortScanResult { port: 3306, is_open: true, service_hint: "MySQL", banner: Some(MYSQL_ACL_ERR.into()), is_phantom_edge: false },
+        ];
+        PortScanner::detect_uniform_edge(&mut ports);
+        assert!(!ports[0].is_phantom_edge);
+        let f = FindingsEngine::eval_ports(&ports, "sunyouth.org");
+        assert!(f.iter().any(|x| x.severity == "HIGH" && x.title.contains("3306")));
+    }
+
+    #[test]
+    fn test_eval_tls_incomplete_chain_downgrades_medium() {
+        // Fix faux positif archambault.ca : « unable to verify the first
+        // certificate » = chaine INCOMPLETE (intermediaire GoDaddy non servi),
+        // openssl verify -untrusted gdig2.crt leaf -> OK. Pas un CRITICAL.
+        let tls = TlsAuditResult {
+            subject: Some("CN=www.archambault.ca".into()),
+            issues: vec![
+                "Erreur de chaîne de confiance : Verification error: unable to verify the first certificate".into(),
+            ],
+            is_valid: false,
+            ..Default::default()
+        };
+        let f = FindingsEngine::eval_tls(&tls);
+        assert!(!f.iter().any(|x| x.severity == "CRITICAL"), "findings: {f:?}");
+        let m = f.iter().find(|x| x.title.contains("incomplète"));
+        assert!(m.is_some(), "finding MEDIUM chaine incomplete absent: {f:?}");
+        assert_eq!(m.unwrap().severity, "MEDIUM");
+    }
+
+    #[test]
+    fn test_eval_tls_truly_invalid_chain_stays_critical() {
+        // Vraie chaine invalide (cert compromis/expired CA) : reste CRITICAL
+        let tls = TlsAuditResult {
+            subject: Some("CN=evil.example".into()),
+            issues: vec![
+                "Erreur de chaîne de confiance : Verification error: certificate signature failure".into(),
+            ],
+            is_valid: false,
+            ..Default::default()
+        };
+        let f = FindingsEngine::eval_tls(&tls);
+        assert!(f.iter().any(|x| x.severity == "CRITICAL" && x.title.contains("invalide ou compromise")));
+    }
+
     #[test]
     fn test_eval_tls_expiry_ladder() {
         // Présent + valide : ni CRITICAL chaîne, ni expiration
@@ -786,7 +975,8 @@ mod tests {
             is_open: true,
             service_hint: "postgresql",
             banner: None,
-        }];
+
+            is_phantom_edge: false,        }];
         let f = FindingsEngine::eval_ports(&ports, "127.0.0.1");
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].severity, "INFO");
@@ -803,13 +993,15 @@ mod tests {
                 is_open: true,
                 service_hint: "http",
                 banner: Some("ssh".into()),
-            },
+
+                is_phantom_edge: false,            },
             PortScanResult {
                 port: 23,
                 is_open: true,
                 service_hint: "telnet",
                 banner: None,
-            },
+
+                is_phantom_edge: false,            },
         ];
         let f = FindingsEngine::eval_ports(&ports, "example.com");
         assert_eq!(f.len(), 1);

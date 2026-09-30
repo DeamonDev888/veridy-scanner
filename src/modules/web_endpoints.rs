@@ -8,6 +8,9 @@ pub struct WebEndpointsResult {
     pub robots_disallowed_paths: Vec<String>,
     pub allowed_http_methods: Vec<String>,
     pub dangerous_methods_found: bool,
+    /// TRACE réellement réfléchie ? None = non testé, Some(true) = preuve de
+    /// réflexion (body echo), Some(false) = serveur répond 501/405.
+    pub trace_reflected: Option<bool>,
     pub http2_supported: bool,
     pub alpn_negotiated: Option<String>,
 }
@@ -26,6 +29,27 @@ fn run_curl_get(url: &str, timeout_s: u64) -> Option<std::process::Output> {
 }
 
 /// Variante HEAD + `-X OPTIONS` pour énumérer les méthodes (en-tête Allow:).
+/// Prouve (ou réfute) la réflexion TRACE par une requête unique.
+/// Réflexion = réponse 2xx dont le body echo la requête (signature X-TRACE ou
+/// la ligne de requête répétée). 501/405/403 = annonce morte.
+fn probe_trace_reflection(root_url: &str) -> bool {
+    let Some(out) = crate::utils::run_tool(
+        "curl",
+        &["-s", "-i", "-X", "TRACE", "--max-time", "6", root_url],
+        10,
+    ) else {
+        return false;
+    };
+    let resp = String::from_utf8_lossy(&out.stdout).to_string();
+    let status_ok = resp.starts_with("HTTP/1.1 2") || resp.starts_with("HTTP/2 2");
+    if !status_ok {
+        return false;
+    }
+    // Signature de réflexion : la requête apparaît echoée dans le body
+    let lower = resp.to_lowercase();
+    lower.contains("x-trace") || lower.contains("trace /") || lower.contains("request body echoed")
+}
+
 fn run_curl_options(url: &str, timeout_s: u64) -> Option<std::process::Output> {
     let max_time = timeout_s.to_string();
     crate::utils::run_tool(
@@ -47,6 +71,7 @@ impl WebEndpointsAuditor {
             robots_disallowed_paths: Vec::new(),
             allowed_http_methods: Vec::new(),
             dangerous_methods_found: false,
+            trace_reflected: None,
             http2_supported: false,
             alpn_negotiated: None,
         };
@@ -90,8 +115,11 @@ impl WebEndpointsAuditor {
             }
         }
 
-        // 3. Méthodes HTTP autorisées (OPTIONS)
-        let root_url = format!("https://{}/", domain);
+        // 3. Méthodes HTTP autorisées (OPTIONS) — schéma détecté (HTTP pur sur
+        // port exotique = box HTB) au lieu de https:// hardcodé.
+        let hostport = crate::utils::host_with_port(domain, &[]);
+        let scheme = crate::modules::scheme_detect::detect_scheme(&hostport).order[0];
+        let root_url = format!("{}://{}/", scheme, hostport);
         if let Some(out) = run_curl_options(&root_url, 3) {
             let s = String::from_utf8_lossy(&out.stdout);
             for line in s.lines() {
@@ -112,6 +140,13 @@ impl WebEndpointsAuditor {
                     }
                 }
             }
+        }
+
+        // 3bis. TRACE annoncé != TRACE réfléchie : one-shot de vérification.
+        // uqac.ca annonce TRACE dans Allow: mais répond 501 Not Implemented —
+        // un finding HIGH sur une annonce morte est un faux positif.
+        if res.allowed_http_methods.iter().any(|m| m == "TRACE") {
+            res.trace_reflected = Some(probe_trace_reflection(&root_url));
         }
 
         // 4. ALPN HTTP/2 support (sans shell, via grep sur stdout)

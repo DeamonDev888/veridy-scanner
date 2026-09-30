@@ -1,11 +1,13 @@
 pub mod box_prober;
 pub mod brand_sec;
+pub mod crt_sh;
 pub mod db;
 pub mod dns;
 pub mod dns_hardening;
 pub mod dnsrecon_audit;
 pub mod email_sec;
 pub mod ffuf_audit;
+pub mod ftp_audit;
 pub mod findings;
 pub mod full_portscan;
 pub mod geo;

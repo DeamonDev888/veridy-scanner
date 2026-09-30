@@ -4,6 +4,32 @@ Toutes les modifications notables de `veridy_scanner` sont documentées ici.
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 
+## [0.5.5] — 2026-09-30
+
+### Fixed
+- **SPF/DMARC fallback apex** : un sous-domaine muet (www.) ne déclenche plus le faux positif « SPF/DMARC absents » — TXT et DMARC sont réinterrogés sur le domaine registrable avec marquage `[apex]` (preuve : www.jeancoutu.com SPF strict + DMARC p=reject détectés, 33 → 55).
+- **TRACE faux positif** : `Allow: TRACE` dans la réponse OPTIONS ne suffit plus — le module émet un one-shot `curl -X TRACE` et ne classe HIGH que si la réflexion est prouvée (2xx + body écho). Un TRACE annoncé mais non implémenté (501, cas uqac.ca) descend en LOW « annoncé mais non réfléchi ». PUT/DELETE/TRACK restent HIGH quoi qu'il arrive.
+- **Schéma hardcodé `https://` dans web_endpoints** : la sonde OPTIONS passe par `scheme_detect` (HTTP pur sur port exotique = box HTB) — même piège que whatweb/nuclei corrigés en 0.5.3.
+- **Test blackhole budget 8s → 15s** : aligné sur le seuil 98 % du bail-out (le 90 % historique faisait faux blackhole sur les hôtes filtrés à ~95 % avec ports vivants).
+
+## [0.5.4] — 2026-09-30
+
+### Fixed
+- **Ports fantômes d'edge/WAF (faux HIGH en cascade)** : un edge (Imperva/Incapsula constaté sur uniprix.com) accepte TCP sur *tout* port et répond HTTP 400 uniformément — le scanner enregistrait des dizaines de « MySQL/Redis/RDP exposés » sans service réel derrière. Nouvelle sonde litmus dans `probe_port` (trame RDP binaire sur port non web muet : seul un edge répond une ligne de statut HTTP 4xx) + détection d'uniformité `detect_uniform_edge` (signature statut+proto façon baseline soft-404 ffuf, seuil ≥3 ports) : les ports artefacts sont marqués `is_phantom_edge` et les findings correspondants remplacés par un UNIQUE finding INFO agrégé « l'edge répond uniformément ». Même principe que le downgrade loopback : ne pas empoisonner le score avec des artefacts d'edge. Un vrai service (bannière MySQL « Host not allowed », SSH, 220-FTP) n'est jamais marqué ; un HTTP réel isolé sur port exotique (sous le seuil) non plus.
+- **Faux CRITICAL « chaîne TLS invalide ou compromise » sur chaîne incomplète** (archambault.ca) : le validateur classait « invalide » une chaîne simplement *incomplète* (serveur ne servant pas l'intermédiaire GoDaddy ; vérifié live `openssl verify -untrusted <intermédiaire AIA>` → OK). Le verdict discrimine désormais : `unable to get local issuer` / `unable to verify the first certificate` → MEDIUM « chaîne incomplète » (config serveur à corriger) ; les autres erreurs de signature restent CRITICAL.
+- **Octets NUL refusés par PostgreSQL** : les bannières de services (et certains enregistrements DNS/en-têtes HTTP) peuvent véhiculer des octets NUL bruts ou des échappements `` que PostgreSQL refuse en `jsonb` ET en `text` — l'INSERT du scan échouait alors silencieusement (cible non cataloguée : sunyouth.org, cegepgarneau.ca). Sanitisation au point unique de passage vers la DB : le NUL devient la séquence visible «␀» (`strip_nul_bytes`) pour les colonnes text, et les NUL littéraux + `` sont retirés du payload jsonb (`strip_nul_json`).
+- **Compilation E0308** : `strip_nul_bytes(&p.banner)` attendait `&str` alors que la bannière est `Option<String>` — passage par `as_deref().map(strip_nul_bytes)`.
+
+## [0.5.3] — 2026-09-29
+
+### Added
+- **Capture des versions WhatWeb** : le parseur whatweb est réécrit en `serde_json` (fin du parseur à la main find/brace-counting) et capture désormais `plugin + version` par composant (`version[]` canonique, sinon `string[]` au motif `produit/version`). Les nombres isolés type `max-age=31536000` ne sont jamais pris pour une version.
+- **Table `audit_tech`** : chaque composant versionné est persisté (`scan_id, name, version, source, is_eol, branch_min`) avec `ON DELETE CASCADE`, index dédié, écriture dans `save_scan` et purge dans `cleanup_scan`.
+- **Verdicts « version obsolète »** : base de seuils EOL par branche (majeur.mineur) couvrant serveurs web, langages, CMS, bases de données, frameworks JS/backend, services exposés (~50 entrées). Une branche inférieure au seuil minimal maintenu produit un finding MEDIUM « Composant obsolète » + affichage console dédié (section empreinte technologique). Patch-lag sur une branche maintenue ≠ EOL : aucun verdict (zéro invention).
+
+### Fixed
+- **Test FTP préexistant en échec** : `test_lock_ftp_no_finding_when_tls_required` échouait sur HEAD (bannière `Pure-FTPd [privsep] [TLS]` signalée « divulgation de version » sans contenir de version). Le finding LOW exige désormais un chiffre dans la bannière (`vsftpd 3.0.5` → LOW ; `Pure-FTPd [TLS]` → rien).
+
 ## [0.5.1] — 2026-09-28
 
 ### Fixed

@@ -70,6 +70,19 @@ CREATE TABLE IF NOT EXISTS audit_subdomains (
     is_alive BOOLEAN DEFAULT FALSE
 );
 
+
+-- 7bis. Catalogage des composants technologiques versionnés (WhatWeb)
+CREATE TABLE IF NOT EXISTS audit_tech (
+    id BIGSERIAL PRIMARY KEY,
+    scan_id BIGINT REFERENCES audit_scans(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    version TEXT,
+    source VARCHAR(32) NOT NULL DEFAULT 'whatweb',
+    is_eol BOOLEAN DEFAULT FALSE,
+    branch_min TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_audit_tech_scan_id ON audit_tech(scan_id);
+
 -- 7. Catalogage des Constatations & Recommandations (Findings)
 CREATE TABLE IF NOT EXISTS audit_findings (
     id BIGSERIAL PRIMARY KEY,

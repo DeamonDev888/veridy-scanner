@@ -1,6 +1,6 @@
 [package]
 name = "veridy_scanner"
-version = "0.5.2"
+version = "0.5.5"
 edition = "2021"
 authors = ["Deamon <contact@veridy.ca>"]
 description = "Scanner offensif modulaire (DNS, ports, TLS, HTTP) + 14 modules lecture-seule de preuve d'impact (chainx dispatcher) + catalogue PostgreSQL"

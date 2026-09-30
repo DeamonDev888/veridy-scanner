@@ -9,7 +9,6 @@ use crate::modules::geo::GeoResult;
 use crate::modules::http::HttpAuditResult;
 use crate::modules::ports::{PortScanResult, PortScanner, EXTENDED_TARGET_PORTS};
 // EXPANDED_SUBDOMAINS removed v0.2
-use crate::modules::tech_stack::TechStackAuditor;
 use crate::modules::tls::TlsAuditResult;
 use crate::modules::vuln_audit::VulnAuditResult;
 use crate::modules::web_endpoints::WebEndpointsResult;
@@ -224,25 +223,29 @@ fn test_port_scan_deduplication() {
             is_open: true,
             service_hint: "HTTP",
             banner: None,
-        },
+
+            is_phantom_edge: false,        },
         PortScanResult {
             port: 8443,
             is_open: true,
             service_hint: "HTTPS Alt",
             banner: None,
-        },
+
+            is_phantom_edge: false,        },
         PortScanResult {
             port: 8443,
             is_open: true,
             service_hint: "HTTPS Alt",
             banner: None,
-        },
+
+            is_phantom_edge: false,        },
         PortScanResult {
             port: 443,
             is_open: true,
             service_hint: "HTTPS",
             banner: None,
-        },
+
+            is_phantom_edge: false,        },
     ];
 
     results.sort_by_key(|r| r.port);
@@ -366,7 +369,8 @@ fn test_findings_engine_evaluates_telnet_and_open_resolver() {
         is_open: true,
         service_hint: "Telnet",
         banner: None,
-    }];
+
+        is_phantom_edge: false,    }];
     let http = HttpAuditResult {
         target_url: "https://test.com".into(),
         http_status: 200,
@@ -438,6 +442,7 @@ fn test_findings_engine_evaluates_telnet_and_open_resolver() {
         robots_disallowed_paths: vec![],
         allowed_http_methods: vec!["GET".into(), "POST".into()],
         dangerous_methods_found: false,
+            trace_reflected: None,
         http2_supported: true,
         alpn_negotiated: Some("h2".into()),
     };
@@ -490,36 +495,6 @@ fn test_findings_engine_evaluates_telnet_and_open_resolver() {
 // ==============================================================================
 // 7. TESTS TECH STACK (WHATWEB PARSER)
 // ==============================================================================
-
-#[test]
-fn test_tech_stack_json_parsing() {
-    let sample_whatweb_json = r#"[
-      {
-        "target": "https://veridy.ca",
-        "http_status": 200,
-        "plugins": {
-          "HTTPServer": {
-            "string": ["nginx/1.22.1"]
-          },
-          "Email": {
-            "string": ["contact@veridy.ca", "support@veridy.ca"]
-          },
-          "Strict-Transport-Security": {
-            "string": ["max-age=31536000"]
-          }
-        }
-      }
-    ]"#;
-
-    let (status, server, emails, techs) = TechStackAuditor::parse_json(sample_whatweb_json);
-    assert_eq!(status, 200);
-    assert_eq!(server.as_deref(), Some("nginx/1.22.1"));
-    assert_eq!(emails.len(), 2);
-    assert!(emails.contains(&"contact@veridy.ca".to_string()));
-    assert!(emails.contains(&"support@veridy.ca".to_string()));
-    assert!(techs.contains(&"HTTPServer".to_string()));
-    assert!(techs.contains(&"Strict-Transport-Security".to_string()));
-}
 
 // ==============================================================================
 // 8. TESTS FFUF AUDIT (PARSER & CATCH-ALL CAPPING)
@@ -734,13 +709,15 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
                 is_open: true,
                 service_hint: "HTTP",
                 banner: None,
-            },
+
+                is_phantom_edge: false,            },
             PortScanResult {
                 port: 443,
                 is_open: true,
                 service_hint: "HTTPS",
                 banner: None,
-            },
+
+                is_phantom_edge: false,            },
         ],
         HttpAuditResult {
             target_url: "https://test-target.ca".into(),
@@ -814,6 +791,7 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
             robots_disallowed_paths: vec![],
             allowed_http_methods: vec!["GET".into()],
             dangerous_methods_found: false,
+            trace_reflected: None,
             http2_supported: true,
             alpn_negotiated: Some("h2".into()),
         },
@@ -842,6 +820,7 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
         None,
         None,
         None,
+        None, // ftp_audit
         None,
         None,
         None, // http_probe
@@ -1592,4 +1571,156 @@ fn test_lock_dnsrecon_no_duplicate_bind_versions() {
     };
     let f = DnsreconAuditor.to_findings(&res);
     assert_eq!(f.len(), 2, "doublon (serveur, version) -> 1 seule ligne");
+}
+
+#[test]
+fn test_lock_httpx_merge_revives_subdomains() {
+    use crate::modules::http_probe::{merge_into_subdomains, HttpProbeResult};
+    use crate::modules::subdomains::SubdomainResult;
+    let mut subs = vec![
+        SubdomainResult {
+            subdomain: "8brains.ca".into(),
+            source: "static".into(),
+            ip_address: None,
+            http_status: None,
+            is_alive: false,
+        },
+        SubdomainResult {
+            subdomain: "dead.8brains.ca".into(),
+            source: "static".into(),
+            ip_address: None,
+            http_status: None,
+            is_alive: false,
+        },
+    ];
+    let probes = vec![HttpProbeResult {
+        url: "https://8brains.ca".into(),
+        input_host: Some("8brains.ca".into()),
+        ip_address: Some("106.0.62.71".into()),
+        status_code: Some(200),
+        ..Default::default()
+    }];
+    let n = merge_into_subdomains(&mut subs, &probes);
+    assert_eq!(n, 1, "un seul hote sonde vivant");
+    assert!(subs[0].is_alive);
+    assert_eq!(subs[0].http_status, Some(200));
+    assert_eq!(subs[0].ip_address.as_deref(), Some("106.0.62.71"));
+    assert!(!subs[1].is_alive, "hote non sonde reste mort");
+}
+
+#[test]
+fn test_lock_httpx_parse_one_extracts_input_host_and_ip() {
+    let line = r#"{"input":"https://www.8brains.ca","url":"https://8brains.ca","status_code":301,"a":["106.0.62.71"],"tech":["Nginx"]}"#;
+    let r = crate::modules::http_probe::HttpProbe::parse_one(line).expect("parse ok");
+    assert_eq!(r.input_host.as_deref(), Some("www.8brains.ca"));
+    assert_eq!(r.ip_address.as_deref(), Some("106.0.62.71"));
+    assert_eq!(r.status_code, Some(301));
+}
+
+
+#[test]
+fn test_lock_rustscan_only_ports_merged_into_core_results() {
+    // Bug scan #269 : 30 ports ouverts reels, 11 en DB. Les 19 ports
+    // exotiques vus uniquement par RustScan doivent maintenant finir
+    // dans port_results (rapport + audit_ports + open_ports_count).
+    use crate::modules::ports::{PortScanResult, PortScanner};
+    let mut port_results = vec![
+        PortScanResult { port: 21, is_open: true, service_hint: PortScanner::guess_service(21), banner: None, is_phantom_edge: false },
+        PortScanResult { port: 80, is_open: true, service_hint: PortScanner::guess_service(80), banner: None, is_phantom_edge: false },
+    ];
+    let rustscan_only: Vec<u16> = vec![2077, 2086, 52223];
+    for p in &rustscan_only {
+        if !port_results.iter().any(|cp| cp.port == *p) {
+            port_results.push(PortScanResult {
+                port: *p,
+                is_open: true,
+                service_hint: PortScanner::guess_service(*p),
+                banner: None,
+
+                is_phantom_edge: false,            });
+        }
+    }
+    port_results.sort_unstable_by_key(|p| p.port);
+    assert_eq!(port_results.len(), 5, "Core 2 + RustScan 3 = 5");
+    let ports: Vec<u16> = port_results.iter().map(|p| p.port).collect();
+    assert_eq!(ports, vec![21, 80, 2077, 2086, 52223], "ports tries");
+    // Dedup : si on rejoue la fusion, pas de doublon
+    for p in &rustscan_only {
+        if !port_results.iter().any(|cp| cp.port == *p) {
+            port_results.push(PortScanResult {
+                port: *p,
+                is_open: true,
+                service_hint: PortScanner::guess_service(*p),
+                banner: None,
+
+                is_phantom_edge: false,            });
+        }
+    }
+    assert_eq!(port_results.len(), 5, "idempotent : pas de doublon");
+}
+
+
+#[test]
+fn test_lock_dnsrecon_host_records_fusion_dedup() {
+    // Lecons 8brains.ca : ftp./whm./autoconfig. fusionnes sans doublon,
+    // l'IP d'un hote existant n'est JAMAIS ecrasee.
+    use crate::modules::subdomains::SubdomainResult;
+    let host_records = vec![
+        ("ftp.8brains.ca".to_string(), "106.0.62.71".to_string()),
+        ("whm.8brains.ca".to_string(), "106.0.62.71".to_string()),
+        ("www.8brains.ca".to_string(), "106.0.62.71".to_string()),
+    ];
+    let mut subs = vec![SubdomainResult {
+        subdomain: "www.8brains.ca".into(),
+        source: "subfinder".into(),
+        ip_address: Some("OLD_IP".into()),
+        http_status: Some(200),
+        is_alive: true,
+    }];
+    for (host, ip) in &host_records {
+        if let Some(sub) = subs.iter_mut().find(|s| s.subdomain.eq_ignore_ascii_case(host)) {
+            if sub.ip_address.is_none() {
+                sub.ip_address = Some(ip.clone());
+            }
+        } else {
+            subs.push(SubdomainResult {
+                subdomain: host.clone(),
+                source: "dnsrecon".into(),
+                ip_address: Some(ip.clone()),
+                http_status: None,
+                is_alive: false,
+            });
+        }
+    }
+    assert_eq!(subs.len(), 3, "www existant + ftp + whm");
+    let www = subs.iter().find(|s| s.subdomain == "www.8brains.ca").unwrap();
+    assert_eq!(www.ip_address.as_deref(), Some("OLD_IP"), "IP existante preservee");
+    assert!(www.is_alive, "donnees vivantes preservees");
+    assert!(subs.iter().any(|s| s.subdomain == "ftp.8brains.ca" && s.ip_address.as_deref() == Some("106.0.62.71")));
+}
+
+#[test]
+fn test_full_portscan_bailout_on_blackhole() {
+    use crate::modules::full_portscan::FullPortScanner;
+    // 192.0.2.0/24 = RFC 5737 TEST-NET-1, aucun routeur ne repond
+    // (blackhole garanti). Permet de valider le bail-out sans Internet.
+    use std::time::{Duration, Instant};
+    let start = Instant::now();
+    let results = FullPortScanner::scan_all(
+        "192.0.2.1",
+        Duration::from_millis(150),
+        None::<fn(u16)>,
+    );
+    let elapsed = start.elapsed();
+    // Avec bail-out (seuil 98%%): termine en < 15s. Le seuil 98 laisse passer
+    // ~2x plus de sondes que le 90 historique (faux blackhole evite sur les
+    // hotes filtrés a 95%% avec ports vivants - cf. notairetruchon) donc le
+    // budget passe de 8s a 15s. Sans bail-out: ~150s.
+    assert!(
+        elapsed < Duration::from_secs(15),
+        "scan_all a pris {}s sur blackhole - bail-out anti-blackhole inactif",
+        elapsed.as_secs_f32()
+    );
+    // TEST-NET-1 ne repond a rien -> 0 port ouvert.
+    assert_eq!(results.len(), 0, "TEST-NET-1 ne devrait avoir aucun port ouvert");
 }
