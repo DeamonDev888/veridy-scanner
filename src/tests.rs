@@ -224,28 +224,32 @@ fn test_port_scan_deduplication() {
             service_hint: "HTTP",
             banner: None,
 
-            is_phantom_edge: false,        },
+            is_phantom_edge: false,
+        },
         PortScanResult {
             port: 8443,
             is_open: true,
             service_hint: "HTTPS Alt",
             banner: None,
 
-            is_phantom_edge: false,        },
+            is_phantom_edge: false,
+        },
         PortScanResult {
             port: 8443,
             is_open: true,
             service_hint: "HTTPS Alt",
             banner: None,
 
-            is_phantom_edge: false,        },
+            is_phantom_edge: false,
+        },
         PortScanResult {
             port: 443,
             is_open: true,
             service_hint: "HTTPS",
             banner: None,
 
-            is_phantom_edge: false,        },
+            is_phantom_edge: false,
+        },
     ];
 
     results.sort_by_key(|r| r.port);
@@ -370,7 +374,8 @@ fn test_findings_engine_evaluates_telnet_and_open_resolver() {
         service_hint: "Telnet",
         banner: None,
 
-        is_phantom_edge: false,    }];
+        is_phantom_edge: false,
+    }];
     let http = HttpAuditResult {
         target_url: "https://test.com".into(),
         http_status: 200,
@@ -442,7 +447,7 @@ fn test_findings_engine_evaluates_telnet_and_open_resolver() {
         robots_disallowed_paths: vec![],
         allowed_http_methods: vec!["GET".into(), "POST".into()],
         dangerous_methods_found: false,
-            trace_reflected: None,
+        trace_reflected: None,
         http2_supported: true,
         alpn_negotiated: Some("h2".into()),
     };
@@ -710,14 +715,16 @@ fn create_dummy_report(findings: Vec<SecurityFinding>) -> FullAuditReport {
                 service_hint: "HTTP",
                 banner: None,
 
-                is_phantom_edge: false,            },
+                is_phantom_edge: false,
+            },
             PortScanResult {
                 port: 443,
                 is_open: true,
                 service_hint: "HTTPS",
                 banner: None,
 
-                is_phantom_edge: false,            },
+                is_phantom_edge: false,
+            },
         ],
         HttpAuditResult {
             target_url: "https://test-target.ca".into(),
@@ -1617,7 +1624,6 @@ fn test_lock_httpx_parse_one_extracts_input_host_and_ip() {
     assert_eq!(r.status_code, Some(301));
 }
 
-
 #[test]
 fn test_lock_rustscan_only_ports_merged_into_core_results() {
     // Bug scan #269 : 30 ports ouverts reels, 11 en DB. Les 19 ports
@@ -1625,8 +1631,20 @@ fn test_lock_rustscan_only_ports_merged_into_core_results() {
     // dans port_results (rapport + audit_ports + open_ports_count).
     use crate::modules::ports::{PortScanResult, PortScanner};
     let mut port_results = vec![
-        PortScanResult { port: 21, is_open: true, service_hint: PortScanner::guess_service(21), banner: None, is_phantom_edge: false },
-        PortScanResult { port: 80, is_open: true, service_hint: PortScanner::guess_service(80), banner: None, is_phantom_edge: false },
+        PortScanResult {
+            port: 21,
+            is_open: true,
+            service_hint: PortScanner::guess_service(21),
+            banner: None,
+            is_phantom_edge: false,
+        },
+        PortScanResult {
+            port: 80,
+            is_open: true,
+            service_hint: PortScanner::guess_service(80),
+            banner: None,
+            is_phantom_edge: false,
+        },
     ];
     let rustscan_only: Vec<u16> = vec![2077, 2086, 52223];
     for p in &rustscan_only {
@@ -1637,7 +1655,8 @@ fn test_lock_rustscan_only_ports_merged_into_core_results() {
                 service_hint: PortScanner::guess_service(*p),
                 banner: None,
 
-                is_phantom_edge: false,            });
+                is_phantom_edge: false,
+            });
         }
     }
     port_results.sort_unstable_by_key(|p| p.port);
@@ -1653,12 +1672,12 @@ fn test_lock_rustscan_only_ports_merged_into_core_results() {
                 service_hint: PortScanner::guess_service(*p),
                 banner: None,
 
-                is_phantom_edge: false,            });
+                is_phantom_edge: false,
+            });
         }
     }
     assert_eq!(port_results.len(), 5, "idempotent : pas de doublon");
 }
-
 
 #[test]
 fn test_lock_dnsrecon_host_records_fusion_dedup() {
@@ -1678,7 +1697,10 @@ fn test_lock_dnsrecon_host_records_fusion_dedup() {
         is_alive: true,
     }];
     for (host, ip) in &host_records {
-        if let Some(sub) = subs.iter_mut().find(|s| s.subdomain.eq_ignore_ascii_case(host)) {
+        if let Some(sub) = subs
+            .iter_mut()
+            .find(|s| s.subdomain.eq_ignore_ascii_case(host))
+        {
             if sub.ip_address.is_none() {
                 sub.ip_address = Some(ip.clone());
             }
@@ -1693,10 +1715,21 @@ fn test_lock_dnsrecon_host_records_fusion_dedup() {
         }
     }
     assert_eq!(subs.len(), 3, "www existant + ftp + whm");
-    let www = subs.iter().find(|s| s.subdomain == "www.8brains.ca").unwrap();
-    assert_eq!(www.ip_address.as_deref(), Some("OLD_IP"), "IP existante preservee");
+    let www = subs
+        .iter()
+        .find(|s| s.subdomain == "www.8brains.ca")
+        .unwrap();
+    assert_eq!(
+        www.ip_address.as_deref(),
+        Some("OLD_IP"),
+        "IP existante preservee"
+    );
     assert!(www.is_alive, "donnees vivantes preservees");
-    assert!(subs.iter().any(|s| s.subdomain == "ftp.8brains.ca" && s.ip_address.as_deref() == Some("106.0.62.71")));
+    assert!(
+        subs.iter()
+            .any(|s| s.subdomain == "ftp.8brains.ca"
+                && s.ip_address.as_deref() == Some("106.0.62.71"))
+    );
 }
 
 #[test]
@@ -1706,11 +1739,8 @@ fn test_full_portscan_bailout_on_blackhole() {
     // (blackhole garanti). Permet de valider le bail-out sans Internet.
     use std::time::{Duration, Instant};
     let start = Instant::now();
-    let results = FullPortScanner::scan_all(
-        "192.0.2.1",
-        Duration::from_millis(150),
-        None::<fn(u16)>,
-    );
+    let results =
+        FullPortScanner::scan_all("192.0.2.1", Duration::from_millis(150), None::<fn(u16)>);
     let elapsed = start.elapsed();
     // Avec bail-out (seuil 98%%): termine en < 15s. Le seuil 98 laisse passer
     // ~2x plus de sondes que le 90 historique (faux blackhole evite sur les
@@ -1722,5 +1752,9 @@ fn test_full_portscan_bailout_on_blackhole() {
         elapsed.as_secs_f32()
     );
     // TEST-NET-1 ne repond a rien -> 0 port ouvert.
-    assert_eq!(results.len(), 0, "TEST-NET-1 ne devrait avoir aucun port ouvert");
+    assert_eq!(
+        results.len(),
+        0,
+        "TEST-NET-1 ne devrait avoir aucun port ouvert"
+    );
 }

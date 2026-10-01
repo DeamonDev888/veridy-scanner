@@ -22,7 +22,16 @@ fn esc(s: &str) -> String {
 
 fn psql_rows(sql: &str) -> Vec<String> {
     let out = std::process::Command::new("sudo")
-        .args(["-n", "-u", "postgres", "psql", "-d", "veridy_audit", "-tAc", sql])
+        .args([
+            "-n",
+            "-u",
+            "postgres",
+            "psql",
+            "-d",
+            "veridy_audit",
+            "-tAc",
+            sql,
+        ])
         .output();
     match out {
         Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
@@ -80,12 +89,22 @@ fn probe(host: &str) -> (String, String, String) {
     let addr = format!("{host}:3306");
     let sock = match addr.to_socket_addrs().ok().and_then(|mut i| i.next()) {
         Some(a) => a,
-        None => return ("MYSQL_INJOIGNABLE".into(), "résolution DNS échouée".into(), String::new()),
+        None => {
+            return (
+                "MYSQL_INJOIGNABLE".into(),
+                "résolution DNS échouée".into(),
+                String::new(),
+            )
+        }
     };
     let mut stream = match TcpStream::connect_timeout(&sock, Duration::from_secs(6)) {
         Ok(s) => s,
         Err(e) => {
-            return ("MYSQL_INJOIGNABLE".into(), format!("TCP 3306 refusé/timeout: {e}"), String::new())
+            return (
+                "MYSQL_INJOIGNABLE".into(),
+                format!("TCP 3306 refusé/timeout: {e}"),
+                String::new(),
+            )
         }
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
@@ -93,7 +112,13 @@ fn probe(host: &str) -> (String, String, String) {
     let mut buf = [0u8; 512];
     let n = match stream.read(&mut buf) {
         Ok(n) if n > 0 => n,
-        _ => return ("MYSQL_EDGE_FANTOME".into(), "3306 accepté mais silence total (aucun greeting) — pas un mysqld prouvé".into(), String::new()),
+        _ => {
+            return (
+                "MYSQL_EDGE_FANTOME".into(),
+                "3306 accepté mais silence total (aucun greeting) — pas un mysqld prouvé".into(),
+                String::new(),
+            )
+        }
     };
     let data = &buf[..n];
     // ERR packet immédiat (refus ACL avant tout échange) : header 4 + 0xff
@@ -112,7 +137,10 @@ fn probe(host: &str) -> (String, String, String) {
         return (
             "MYSQL_EXPOSE_PUBLIC".into(),
             "mysqld réel exposé publiquement (paquet ERR avant auth)".into(),
-            format!("ERR {code} (première ligne: {})", redact_ips(&msg[..msg.len().min(60)])),
+            format!(
+                "ERR {code} (première ligne: {})",
+                redact_ips(&msg[..msg.len().min(60)])
+            ),
         );
     }
     match parse_mysql_greeting(data) {
@@ -125,9 +153,23 @@ fn probe(host: &str) -> (String, String, String) {
             // réponse HTTP = edge qui parle HTTP partout (cf. detect_uniform_edge)
             let head = String::from_utf8_lossy(&data[..data.len().min(60)]);
             if head.starts_with("HTTP/") {
-                ("MYSQL_EDGE_FANTOME".into(), "réponse HTTP sur :3306 — artefact edge/WAF, pas un mysqld".into(), format!("first-line: {}", head.lines().next().unwrap_or("")),)
+                (
+                    "MYSQL_EDGE_FANTOME".into(),
+                    "réponse HTTP sur :3306 — artefact edge/WAF, pas un mysqld".into(),
+                    format!("first-line: {}", head.lines().next().unwrap_or("")),
+                )
             } else {
-                ("MYSQL_EDGE_FANTOME".into(), "réponse non-MySQL sur :3306".into(), format!("hex head: {}", data[..data.len().min(24)].iter().map(|b| format!("{b:02x}")).collect::<String>()))
+                (
+                    "MYSQL_EDGE_FANTOME".into(),
+                    "réponse non-MySQL sur :3306".into(),
+                    format!(
+                        "hex head: {}",
+                        data[..data.len().min(24)]
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>()
+                    ),
+                )
             }
         }
     }
@@ -142,8 +184,6 @@ fn redact_ips(s: &str) -> String {
 }
 
 use std::net::ToSocketAddrs;
-
-
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -168,7 +208,6 @@ fn main() {
     std::process::exit(code);
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -176,8 +215,7 @@ mod tests {
     // Greeting mysqld 5.x : len=0x32, seq=0, proto=10, version\0, ...
     #[allow(dead_code)]
     const _ERR_PACKET_1130: &[u8] = &[
-        0x56, 0x00, 0x00, 0x00, 0xff, 0x6a, 0x04, 0x23,
-        0x48, 0x59, 0x30, 0x30, 0x30, b' ', 0, 0,
+        0x56, 0x00, 0x00, 0x00, 0xff, 0x6a, 0x04, 0x23, 0x48, 0x59, 0x30, 0x30, 0x30, b' ', 0, 0,
     ];
     const GREETING_FIXTURE: &[u8] = &[
         0x32, 0x00, 0x00, 0x00, 0x0a, b'5', b'.', b'7', b'.', b'2', b'2', 0x00, 0, 0,

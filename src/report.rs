@@ -1,11 +1,11 @@
 use crate::modules::brand_sec::BrandSecResult;
-use crate::modules::ftp_audit::FtpAuditResult;
 use crate::modules::dns::DnsAuditResult;
 use crate::modules::dns_hardening::DnsHardeningResult;
 use crate::modules::dnsrecon_audit::DnsreconResult;
 use crate::modules::email_sec::EmailSecurityResult;
 use crate::modules::ffuf_audit::FfufAuditResult;
 use crate::modules::findings::SecurityFinding;
+use crate::modules::ftp_audit::FtpAuditResult;
 use crate::modules::geo::GeoResult;
 use crate::modules::http::HttpAuditResult;
 use crate::modules::loot::LootResult;
@@ -949,14 +949,44 @@ impl FullAuditReport {
         if let Some(ref f) = self.ftp_audit {
             println!("[9b] AUDIT FTP (port 21)");
             println!("    • Cible                : {}", f.target);
-            println!("    • Banner               : {}", if f.banner.is_empty() { "(aucun)".into() } else { f.banner.clone() });
-            println!("    • TLS supporté         : {}", if f.tls_supported { "OUI" } else { "NON" });
-            println!("    • TLS exigé            : {}", if f.tls_required { "OUI [OK]" } else { "NON [RISQUE]" });
-            println!("    • Anonymous FTP        : {}", if f.anonymous_allowed { "AUTORISÉ [CRITIQUE]" } else { "REFUSÉ" });
-            println!("    • Loot attempté        : {}", if f.loot_attempted { format!("OUI ({} fichier(s))", f.loot_files) } else { "non".into() });
+            println!(
+                "    • Banner               : {}",
+                if f.banner.is_empty() {
+                    "(aucun)".into()
+                } else {
+                    f.banner.clone()
+                }
+            );
+            println!(
+                "    • TLS supporté         : {}",
+                if f.tls_supported { "OUI" } else { "NON" }
+            );
+            println!(
+                "    • TLS exigé            : {}",
+                if f.tls_required {
+                    "OUI [OK]"
+                } else {
+                    "NON [RISQUE]"
+                }
+            );
+            println!(
+                "    • Anonymous FTP        : {}",
+                if f.anonymous_allowed {
+                    "AUTORISÉ [CRITIQUE]"
+                } else {
+                    "REFUSÉ"
+                }
+            );
+            println!(
+                "    • Loot attempté        : {}",
+                if f.loot_attempted {
+                    format!("OUI ({} fichier(s))", f.loot_files)
+                } else {
+                    "non".into()
+                }
+            );
             println!("    • Verdict              : {}", f.summary);
             println!();
         }
-}
-
     }
+}

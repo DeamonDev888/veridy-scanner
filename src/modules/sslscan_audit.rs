@@ -19,9 +19,11 @@ pub struct SslscanResult {
 pub struct SslscanAuditor;
 
 impl SslscanAuditor {
-    pub fn audit(target: &str) -> SslscanResult {
+    pub fn audit(target: &str, custom_ports: &[u16]) -> SslscanResult {
         let start = Instant::now();
-        let target_host = format!("{}:443", target);
+        // host_with_port : port custom (ex. 8443) si fourni, sinon cible
+        // nue et sslscan applique son défaut 443 — plus de port codé en dur.
+        let target_host = crate::utils::host_with_port(target, custom_ports);
         let pid = std::process::id();
         let tmp_output = format!(
             "/tmp/sslscan_{}_{}.xml",

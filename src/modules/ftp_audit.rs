@@ -29,7 +29,10 @@ pub struct FtpAuditor;
 impl FtpAuditor {
     /// Decide si on doit lancer l'audit : cible = nom d'hote + port 21
     /// present dans la liste des ports ouverts.
-    pub fn should_audit(target: &str, port_results: &[crate::modules::ports::PortScanResult]) -> bool {
+    pub fn should_audit(
+        target: &str,
+        port_results: &[crate::modules::ports::PortScanResult],
+    ) -> bool {
         if target.parse::<std::net::IpAddr>().is_ok() {
             return false;
         }
@@ -93,7 +96,8 @@ impl FtpAuditor {
             let t = line.trim();
             if let Some(rest) = t.strip_prefix("banner   :") {
                 banner = rest.trim().to_string();
-            } else if t.contains("anonymous OK") || t.contains("AUTORISÉ") || t.contains("AUTORISE") {
+            } else if t.contains("anonymous OK") || t.contains("AUTORISÉ") || t.contains("AUTORISE")
+            {
                 anonymous_allowed = true;
             } else if t.contains("AUTH TLS OK") {
                 tls_supported = true;
@@ -112,12 +116,17 @@ impl FtpAuditor {
         let (loot_attempted, loot_files) = match &ftplx_out {
             Some(o) => {
                 let txt = String::from_utf8_lossy(&o.stdout).to_string();
-                let attempted =
-                    !txt.contains("REFUSÉ") && !txt.contains("REFUSE") && !txt.contains("rien à looter");
+                let attempted = !txt.contains("REFUSÉ")
+                    && !txt.contains("REFUSE")
+                    && !txt.contains("rien à looter");
                 let n = txt
                     .lines()
                     .find(|l| l.contains("manifeste :"))
-                    .and_then(|l| l.split_whitespace().nth(1).and_then(|s| s.parse::<usize>().ok()))
+                    .and_then(|l| {
+                        l.split_whitespace()
+                            .nth(1)
+                            .and_then(|s| s.parse::<usize>().ok())
+                    })
                     .unwrap_or(0);
                 (attempted, n)
             }
@@ -214,7 +223,13 @@ mod tests {
     use crate::modules::ports::PortScanResult;
 
     fn port(p: u16) -> PortScanResult {
-        PortScanResult { port: p, is_open: true, service_hint: "x", banner: None, is_phantom_edge: false }
+        PortScanResult {
+            port: p,
+            is_open: true,
+            service_hint: "x",
+            banner: None,
+            is_phantom_edge: false,
+        }
     }
 
     #[test]
@@ -228,7 +243,11 @@ mod tests {
 
     #[test]
     fn test_lock_ftp_findings_critical_when_anonymous_allowed() {
-        let r = FtpAuditResult { target: "victim.ca".into(), anonymous_allowed: true, ..Default::default() };
+        let r = FtpAuditResult {
+            target: "victim.ca".into(),
+            anonymous_allowed: true,
+            ..Default::default()
+        };
         let f = FtpAuditor.to_findings(&r);
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].severity, "CRITICAL");
@@ -246,7 +265,9 @@ mod tests {
             ..Default::default()
         };
         let f = FtpAuditor.to_findings(&r);
-        assert!(f.iter().any(|x| x.severity == "HIGH" && x.title.contains("clair")));
+        assert!(f
+            .iter()
+            .any(|x| x.severity == "HIGH" && x.title.contains("clair")));
     }
 
     #[test]

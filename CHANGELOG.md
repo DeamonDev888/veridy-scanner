@@ -4,6 +4,28 @@ Toutes les modifications notables de `veridy_scanner` sont documentées ici.
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 
+## [0.5.7] — 2026-09-30
+
+### Fixed
+- **Pureté scanner offensif** : recommandations à résidu normatif (juridiction/politique interne dans `waf.rs`, politique de transfert dans `findings.rs`) remplacées par du vocabulaire technique (techniques d'évasion, périmètre d'hébergement).
+- **Preuves /tmp en permissions 0600** : `envx_proof.env` et `gitdump_logs.txt` étaient posés world-readable — désormais lisibles opérateur seul (`std::os::unix::fs::PermissionsExt`).
+- **keyprobe multi-clés** : chainx ne pipe que la première clé en stdin (avant, 9 clés = 1 vérifiée). Concaténation de toutes les clés, une seule exécution, keyprobe boucle sur stdin.
+- **Underflow scan_range** : `full_portscan::scan_range` acceptait `end < start` → `usize` panic. Garde ajoutée (plage inversée = `Vec::new()`).
+- **sslscan port 443 codé en dur** : `SslscanAuditor::audit` ignorait `--ports` (TLS sur port 8443 = aveugle). Signature étendue à `audit(target, custom_ports)` + appel orchestrateur adapté via capture avant la closure `'static`.
+- **Détection TLS 1.0/1.1 ressuscitée** : `openssl.cnf` Kali force `MinProtocol=TLSv1.2`, le client openssl refusait le handshake avant d'interroger le serveur → `supports_tls10/11` quasi toujours false. Override `-min_protocol TLSv1` ajouté aux deux sondes legacy. Vérifié live : `tls-v1-0.badssl.com` → `True | True` ; `scanme.nmap.org` → `False | False`.
+
+## [0.5.6] — 2026-09-30
+
+### Added
+- **chainx dispatche désormais les bases de données exposées** : un finding `PORT « Port de base de données N (MySQL/Redis/MongoDB) exposé publiquement »` déclenche automatiquement `mysqlx`/`redisx`/`mongodx` (greeting protocole en lecture seule, zéro credential). Les bins persistant déjà leur verdict dans `audit_impact`, chainx ne fait que les déclencher au bon moment (gate <24h et `--force` identiques aux autres modules). Le mapping est verrouillé par `db_bin_mapping_findings_port` et le parsing de sortie par `parse_kv_verdict_avec_espaces_variables`. PostgreSQL exposé (5432) ne déclenche rien — pas de bin dédié, pas de dispatch inventé.
+
+### Fixed
+- **Bug historique chainx : stdout des bins enfants jamais capturé** : `run_bin` appelait `wait_with_output()` sans `stdout(Stdio::piped())` — sans pipe explicite, stdout est hérité du parent et la capture renvoyait TOUJOURS une chaîne vide. Conséquence en DB : verdicts `EXIT0` génériques au lieu des vrais verdicts (19 spoofcheck « EXIT0 » au lieu de PARTIEL/PROTEGE, etc.). Le pipe explicite est maintenant posé + parse robuste `parse_kv_line` (clés `VERDICT`/`verdict`/`détail`, espaces variables) verrouillé par test.
+- **Doublon de verdict** : le dispatch DB n'écrivait plus de verdict fantôme `ERREUR_EXECUTION` quand le bin avait déjà persisté le sien (lignes artifacts purgées de la DB).
+
+### Changed
+- **Purge du code mort** : `src/modules/orchestrator.rs` et `src/modules/report.rs` (doublons périmés du 2026-09-28, non déclarés dans `mod.rs` donc jamais compilés) supprimés — archivés dans `~/veridy-archive/dead-code-20260930/`. Les versions actives sont `src/orchestrator.rs` et `src/report.rs`.
+
 ## [0.5.5] — 2026-09-30
 
 ### Fixed

@@ -41,6 +41,8 @@ fn main() {
             }
             // preuve conservee cote operateur seulement, jamais affichee en clair
             if let Ok(mut f) = std::fs::File::create("/tmp/envx_proof.env") {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
                 let _ = writeln!(f, "{}", r.body);
             }
             std::process::exit(0);

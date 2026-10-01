@@ -1,14 +1,19 @@
 [package]
 name = "veridy_scanner"
-version = "0.5.5"
+version = "0.5.7"
 edition = "2021"
 authors = ["Deamon <contact@veridy.ca>"]
-description = "Scanner offensif modulaire (DNS, ports, TLS, HTTP) + 14 modules lecture-seule de preuve d'impact (chainx dispatcher) + catalogue PostgreSQL"
+description = "Scanner offensif modulaire (DNS, ports, TLS, HTTP) + 17 modules lecture-seule de preuve d'impact (chainx dispatcher) + catalogue PostgreSQL (13 tables)"
 license = "Apache-2.0"
 repository = "https://github.com/DeamonDev888/veridy-scanner"
 homepage = "https://github.com/DeamonDev888/veridy-scanner"
 keywords = ["security", "recon", "scanner", "audit", "pentest"]
 categories = ["security", "command-line-utilities"]
+
+# impact/ = ancien crate veridy-impact séparé, absorbé en v0.5.0 (mêmes bins
+# ré-intégrés à src/bin/). Présent dans le clone pour archive curator, hors
+# package publié : un seul crate, veridy_scanner.
+exclude = ["impact", "CARGO-PUBLISH.md", "AUDIT-RUST-2026-09-19.md"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

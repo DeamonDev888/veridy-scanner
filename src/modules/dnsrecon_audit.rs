@@ -68,7 +68,9 @@ impl DnsreconAuditor {
                         if !domain_str.is_empty()
                             && !address.is_empty()
                             && domain_str.ends_with(domain)
-                            && !result.host_records.contains(&(domain_str.clone(), address.clone()))
+                            && !result
+                                .host_records
+                                .contains(&(domain_str.clone(), address.clone()))
                         {
                             result.host_records.push((domain_str, address));
                         }

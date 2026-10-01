@@ -4,13 +4,13 @@ use std::time::{Duration, Instant};
 
 use crate::config::Config;
 use crate::modules::brand_sec::BrandSecAuditor;
-use crate::modules::ftp_audit::FtpAuditor;
 use crate::modules::dns::DnsAuditor;
 use crate::modules::dns_hardening::DnsHardeningAuditor;
 use crate::modules::dnsrecon_audit::DnsreconAuditor;
 use crate::modules::email_sec::EmailSecAuditor;
 use crate::modules::ffuf_audit::FfufAuditor;
 use crate::modules::findings::{FindingsEngine, SecurityFinding};
+use crate::modules::ftp_audit::FtpAuditor;
 use crate::modules::geo::GeoAuditor;
 use crate::modules::http::HttpAuditor;
 use crate::modules::http_probe::probe_parallel;
@@ -280,10 +280,13 @@ impl AuditOrchestrator {
         let handle_sslscan = if let Some(idx) = idx_sslscan {
             let tracker_c = Arc::clone(&tracker);
             let t = target.clone();
+            let ssl_ports = config.custom_ports.clone().unwrap_or_default();
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Test des ciphers TLS 1.0-1.3 & Heartbleed...");
-                run_guarded(t0, &tracker_c, idx, "SSLScan", || SslscanAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "SSLScan", || {
+                    SslscanAuditor::audit(&t, &ssl_ports)
+                })
             }))
         } else {
             None
@@ -527,6 +530,53 @@ impl AuditOrchestrator {
 
         // 6. Récupération des outils Kali en arrière-plan
         let waf_result = handle_waf.map(|h| h.join().unwrap_or_default());
+
+        // === GARDE-FOU EDGE (post-livraison v0.5.5) ==============================
+        // Si w a remonte un WAF edge-uniforme (Imperva/Cloudflare/BitNinja), les
+        // ports vus UNIQUEMENT par RustScan (non confirmes par le core 22 ports)
+        // et hors liste well-known (1-1024 + web/mail/db classiques) sont des
+        // artefacts de l edge qui repond TCP partout. On les retire du rapport
+        // (mais on les laisse dans documente le calcul open_ports_count pour
+        // l observabilite du test : le test unitaire uniprix_imp_filter le verifie).
+        if let Some(ref w) = waf_result {
+            if w.waf_detected
+                && matches!(
+                    w.firewall_name.as_str(),
+                    "Imperva"
+                        | "Incapsula"
+                        | "Cloudflare"
+                        | "BitNinja"
+                        | "Akamai"
+                        | "Fastly"
+                        | "Sucuri"
+                )
+            {
+                const WELL_KNOWN: &[u16] = &[
+                    21, 22, 25, 53, 80, 81, 110, 143, 443, 465, 587, 995, 993, 1080, 1194, 1433,
+                    1521, 1723, 1883, 2049, 2082, 2083, 2086, 2087, 2095, 2096, 3306, 3389, 4443,
+                    5060, 5432, 5900, 6379, 8000, 8080, 8081, 8443, 8888, 9200, 9418, 11211, 15672,
+                    27017, 27018, 27019,
+                ];
+                let before = port_results.len();
+                port_results.retain(|p| WELL_KNOWN.contains(&p.port) || p.port <= 1024);
+                // On ne mute pas rustscan_result (immutable ici) ; port_results
+                // est deja filtre, et le rapport final est calcule depuis
+                // port_results. Les open_ports de rustscan_result restent
+                // disponibles pour open_ports_count mais ne contribuent pas
+                // aux findings (is_phantom_edge deja pose par detect_uniform_edge).
+                let after = port_results.len();
+                if after < before {
+                    eprintln!(
+                        "[edge-guard] {} : filtre {} port(s) fantome(s) edge ({} -> {})",
+                        target,
+                        before - after,
+                        before,
+                        after
+                    );
+                }
+            }
+        }
+        // === FIN GARDE-FOU EDGE ====================================================
         let whatweb_result = handle_whatweb.map(|h| h.join().unwrap_or_default());
         let sslscan_result = handle_sslscan.map(|h| h.join().unwrap_or_default());
         let dnstwist_result = handle_dnstwist.map(|h| h.join().unwrap_or_default());
@@ -620,7 +670,10 @@ impl AuditOrchestrator {
         }
         // Fusion crt.sh -> sous-domaines : les hotes historiques (certs CT)
         // sont ajoutes s'ils ne sont pas deja connus (source = crt.sh).
-        let crt_added = crate::modules::crt_sh::CrtShAuditor::merge_into(&mut subdomains_result, &crt_sh_result);
+        let crt_added = crate::modules::crt_sh::CrtShAuditor::merge_into(
+            &mut subdomains_result,
+            &crt_sh_result,
+        );
         if crt_added > 0 {
             println!(
                 ">>> [CRT.SH] {crt_added} sous-domaine(s) historique(s) ajouté(s) via Certificate Transparency"

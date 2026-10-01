@@ -113,7 +113,6 @@ impl WafAuditor {
         }
     }
 
-
     /// Sonde passive multi-ports : GET / sur 2083/2087/2096 (et 2082/2086/2095
     /// en http) et cherche les marqueurs de challenge edge. 1 requete par port.
     fn probe_edge_challenges(host: &str) -> Vec<u16> {
@@ -168,7 +167,7 @@ impl WafAuditor {
                     "Pare-feu applicatif (WAF) actif : {} ({})",
                     res.firewall_name, res.manufacturer
                 ),
-                recommendation: "Vérifier que le WAF ne transite pas les données hors de la juridiction requise par votre politique interne.".to_string(),
+                recommendation: "Prendre en compte le WAF dans les tests applicatifs ultérieurs : ses règles de filtrage peuvent nécessiter des techniques dévasion (encodage, fragmentation des requêtes).".to_string(),
             });
         } else {
             findings.push(SecurityFinding {

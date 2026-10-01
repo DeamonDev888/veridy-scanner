@@ -365,7 +365,7 @@ impl DnsAuditor {
             }
         }
 
-                // Fallback apex : un sous-domaine (www.) n'héberge presque jamais le
+        // Fallback apex : un sous-domaine (www.) n'héberge presque jamais le
         // SPF — la politique vit sur le domaine registrable. Évite le faux
         // positif « SPF absent » (vérifié live : www.jeancoutu.com muet,
         // apex = v=spf1 + DMARC p=reject).
@@ -373,11 +373,9 @@ impl DnsAuditor {
             let apex = Self::registrable_domain(domain);
             if apex != domain {
                 let mut apex_txt: Vec<String> = Vec::new();
-                if let Some(ans) = crate::modules::netdns::query(
-                    &apex,
-                    "TXT",
-                    std::time::Duration::from_secs(2),
-                ) {
+                if let Some(ans) =
+                    crate::modules::netdns::query(&apex, "TXT", std::time::Duration::from_secs(2))
+                {
                     for (v, _) in &ans.answers {
                         let t = v.trim().trim_matches('"').to_string();
                         if !t.is_empty() {
@@ -410,7 +408,7 @@ impl DnsAuditor {
             }
         }
 
-// DMARC (_dmarc.domain) — hostname PUIS apex en fallback : la politique
+        // DMARC (_dmarc.domain) — hostname PUIS apex en fallback : la politique
         // DMARC vit au niveau organizational (presque jamais sur www.).
         // Vérifié live : www.jeancoutu.com muet, apex = p=reject.
         let dmarc_candidates = {
@@ -423,39 +421,39 @@ impl DnsAuditor {
         };
         'outer: for cand in &dmarc_candidates {
             let dmarc_target = format!("_dmarc.{}", cand);
-        if let Some(output) = crate::utils::run_tool(
-            "dig",
-            &["+short", "+time=2", "+tries=1", "TXT", &dmarc_target],
-            8,
-        ) {
-            for line in String::from_utf8_lossy(&output.stdout).lines() {
-                let clean = line.trim().trim_matches('"');
-                if clean.starts_with("v=DMARC1") {
-                    result.dmarc_found = true;
-                    result.dmarc_record = Some(clean.to_string());
+            if let Some(output) = crate::utils::run_tool(
+                "dig",
+                &["+short", "+time=2", "+tries=1", "TXT", &dmarc_target],
+                8,
+            ) {
+                for line in String::from_utf8_lossy(&output.stdout).lines() {
+                    let clean = line.trim().trim_matches('"');
+                    if clean.starts_with("v=DMARC1") {
+                        result.dmarc_found = true;
+                        result.dmarc_record = Some(clean.to_string());
 
-                    // Détection politique p=
-                    for part in clean.split(';') {
-                        let p = part.trim();
-                        if p.starts_with("p=") {
-                            result.dmarc_policy = Some(p.trim_start_matches("p=").to_string());
+                        // Détection politique p=
+                        for part in clean.split(';') {
+                            let p = part.trim();
+                            if p.starts_with("p=") {
+                                result.dmarc_policy = Some(p.trim_start_matches("p=").to_string());
+                            }
                         }
-                    }
 
-                    let tagged = if cand != domain {
-                        format!("[apex {cand}] {clean}")
-                    } else {
-                        clean.to_string()
-                    };
-                    result.all_records.push(DnsRecordEntry {
-                        record_type: "DMARC".to_string(),
-                        value: tagged,
-                        is_secure: false,
-                    });
-                    break 'outer;
+                        let tagged = if cand != domain {
+                            format!("[apex {cand}] {clean}")
+                        } else {
+                            clean.to_string()
+                        };
+                        result.all_records.push(DnsRecordEntry {
+                            record_type: "DMARC".to_string(),
+                            value: tagged,
+                            is_secure: false,
+                        });
+                        break 'outer;
+                    }
                 }
             }
-        }
         }
     }
 }

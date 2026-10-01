@@ -45,6 +45,8 @@ fn main() {
                 println!("    - {m}");
             }
             if let Ok(mut f) = std::fs::File::create("/tmp/gitdump_logs.txt") {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = f.set_permissions(std::fs::Permissions::from_mode(0o600));
                 let _ = write!(f, "{}", log.body);
             }
         }

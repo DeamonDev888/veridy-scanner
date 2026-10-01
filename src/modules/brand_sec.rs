@@ -117,14 +117,20 @@ impl BrandSecAuditor {
         list
     }
 
-
     /// Interroge rdap.org/domain/<sosie> (redirige vers le RDAP du TLD).
     /// 1 requete curl, 20s. Retourne None si RDAP muet/erreur.
     fn rdap_check(domain: &str) -> Option<LookalikeVerdict> {
         let url = format!("https://rdap.org/domain/{domain}");
         let out = crate::utils::run_tool(
             "curl",
-            &["-sL", "--max-time", "20", "-H", "Accept: application/rdap+json", &url],
+            &[
+                "-sL",
+                "--max-time",
+                "20",
+                "-H",
+                "Accept: application/rdap+json",
+                &url,
+            ],
             25,
         )?;
         let body = String::from_utf8_lossy(&out.stdout).to_string();
@@ -140,7 +146,11 @@ impl BrandSecAuditor {
                 let roles = e
                     .get("roles")
                     .and_then(|x| x.as_array())
-                    .map(|arr| arr.iter().filter_map(|r| r.as_str().map(|x| x.to_string())).collect::<Vec<_>>())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|r| r.as_str().map(|x| x.to_string()))
+                            .collect::<Vec<_>>()
+                    })
                     .unwrap_or_default();
                 if roles.iter().any(|r| r == "registrant") {
                     // vcardArray [ "vcard", [ [...], ["fn", {}, "text", "NAME"] ] ]
@@ -200,7 +210,10 @@ impl BrandSecAuditor {
                 match Self::rdap_check(&l.domain) {
                     Some(v) if v.likely_legitimate => {
                         let who = v.registrant.as_deref().unwrap_or("registrant privé");
-                        let year = v.registered_year.map(|y| y.to_string()).unwrap_or_else(|| "?".into());
+                        let year = v
+                            .registered_year
+                            .map(|y| y.to_string())
+                            .unwrap_or_else(|| "?".into());
                         legit.push(format!("{} ({} , depuis {})", l.domain, who, year));
                     }
                     _ => typos.push(l.domain.clone()),

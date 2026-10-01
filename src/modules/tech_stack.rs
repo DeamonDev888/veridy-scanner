@@ -134,19 +134,72 @@ impl TechStackAuditor {
     /// un seul marqueur suffit (OR). Les scripts chargés au runtime laissent
     /// leur marqueur de chargement dans la source (gtm.js?id=, otSDKStub.js).
     pub(crate) const JS_THIRD_PARTY_MARKERS: &[(&str, &[&str])] = &[
-        ("Google Tag Manager", &["googletagmanager.com/gtm.js", "googletagmanager.com/ns.html"]),
-        ("Google Analytics (gtag)", &["gtag/js?id=G-", "googletagmanager.com/gtag/js"]),
-        ("reCAPTCHA", &["google.com/recaptcha/api.js", "grecaptcha.execute"]),
-        ("OneTrust CMP", &["cookielaw.org/scripttemplates/otSDKStub.js", "data-domain-script"]),
-        ("Criteo", &["criteo.com", "criteo.net", "criteo-ads.js", "CRITEO_RETAILER_VISITOR_COOKIE"]),
+        (
+            "Google Tag Manager",
+            &[
+                "googletagmanager.com/gtm.js",
+                "googletagmanager.com/ns.html",
+            ],
+        ),
+        (
+            "Google Analytics (gtag)",
+            &["gtag/js?id=G-", "googletagmanager.com/gtag/js"],
+        ),
+        (
+            "reCAPTCHA",
+            &["google.com/recaptcha/api.js", "grecaptcha.execute"],
+        ),
+        (
+            "OneTrust CMP",
+            &[
+                "cookielaw.org/scripttemplates/otSDKStub.js",
+                "data-domain-script",
+            ],
+        ),
+        (
+            "Criteo",
+            &[
+                "criteo.com",
+                "criteo.net",
+                "criteo-ads.js",
+                "CRITEO_RETAILER_VISITOR_COOKIE",
+            ],
+        ),
         ("DialogInsight", &["cdn.dialoginsight.com"]),
-        ("DoubleClick / Google Ad Manager", &["doubleclick.net", "googlesyndication.com", "securepubads.g.doubleclick.net"]),
+        (
+            "DoubleClick / Google Ad Manager",
+            &[
+                "doubleclick.net",
+                "googlesyndication.com",
+                "securepubads.g.doubleclick.net",
+            ],
+        ),
         // Les URLs échappées \/\/ (blocs JS/JSON) doivent matcher aussi :
         // le lowercasing ne retire pas les backslashes, on teste les deux formes.
-        ("Google Maps", &["maps.googleapis.com/maps", "maps.googleapis.com\\/maps", "maps.google.com/maps"]),
-        ("Plausible Analytics", &["plausible.io/js", "plausible.io/api/event"]),
-        ("Google Fonts", &["fonts.googleapis.com/css", "fonts.googleapis.com\\/css", "fonts.gstatic.com"]),
-        ("Cloudflare Turnstile", &["challenges.cloudflare.com/turnstile"]),
+        (
+            "Google Maps",
+            &[
+                "maps.googleapis.com/maps",
+                "maps.googleapis.com\\/maps",
+                "maps.google.com/maps",
+            ],
+        ),
+        (
+            "Plausible Analytics",
+            &["plausible.io/js", "plausible.io/api/event"],
+        ),
+        (
+            "Google Fonts",
+            &[
+                "fonts.googleapis.com/css",
+                "fonts.googleapis.com\\/css",
+                "fonts.gstatic.com",
+            ],
+        ),
+        (
+            "Cloudflare Turnstile",
+            &["challenges.cloudflare.com/turnstile"],
+        ),
         ("hCaptcha", &["hcaptcha.com/1/api.js"]),
         ("Stripe", &["js.stripe.com"]),
         ("PayPal", &["paypal.com/sdk/js", "paypalobjects.com"]),
@@ -157,10 +210,16 @@ impl TechStackAuditor {
         ("TikTok Pixel", &["analytics.tiktok.com"]),
         ("Microsoft Clarity", &["clarity.ms"]),
         ("jQuery", &["jquery.min.js", "jquery.js", "jquery-"]),
-        ("React", &["react.production.min.js", "react-dom", "_reactRoot"]),
+        (
+            "React",
+            &["react.production.min.js", "react-dom", "_reactRoot"],
+        ),
         ("Vue.js", &["vue.runtime", "vue.min.js", "vue.global"]),
         ("Angular", &["ng-version", "angular.min.js"]),
-        ("Bootstrap", &["bootstrap.min.css", "bootstrap.bundle.min.js"]),
+        (
+            "Bootstrap",
+            &["bootstrap.min.css", "bootstrap.bundle.min.js"],
+        ),
     ];
 
     /// Cherche les marqueurs dans le HTML ; retourne les noms détectés.
@@ -168,10 +227,7 @@ impl TechStackAuditor {
         let lower = html.to_lowercase();
         let mut out = Vec::new();
         for (name, markers) in Self::JS_THIRD_PARTY_MARKERS {
-            if markers
-                .iter()
-                .any(|m| lower.contains(&m.to_lowercase()))
-            {
+            if markers.iter().any(|m| lower.contains(&m.to_lowercase())) {
                 out.push(name.to_string());
             }
         }
@@ -422,7 +478,6 @@ fn normalize_version_token(s: &str) -> String {
     best.unwrap_or(s).trim_matches('.').to_string()
 }
 
-
 /// Fusionne deux listes sans doublons (order-preserving).
 fn merge_unique(mut base: Vec<String>, extra: Vec<String>) -> Vec<String> {
     for e in extra {
@@ -444,7 +499,10 @@ fn products_from_server_banner(banner: &str) -> Vec<(String, String)> {
         };
         let product = left.trim();
         if product.is_empty()
-            || !product.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+            || !product
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic())
         {
             continue;
         }
@@ -485,7 +543,11 @@ fn parse_version(v: &str) -> Option<[u32; 3]> {
         if i > 2 {
             break;
         }
-        let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).take(4).collect();
+        let digits: String = part
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .take(4)
+            .collect();
         if digits.is_empty() {
             // Segment non numérique ("2.4.x-beta") → on arrête net.
             break;
@@ -532,7 +594,7 @@ pub(crate) const THRESHOLDS: &[(&str, [u32; 2])] = &[
     ("joomla", [4, 0]),
     ("spip", [4, 0]),
     ("magento", [2, 4]),
-    ("shopify", [99, 0]),   // SaaS : jamais de verdict version
+    ("shopify", [99, 0]), // SaaS : jamais de verdict version
     ("wix", [99, 0]),
     ("squarespace", [99, 0]),
     // Bases de données
@@ -615,7 +677,9 @@ mod tests {
             LIVE_OUTPUT.replace("scanme.nmap.org", "other.target")
         );
         let (_s, _sv, _e, techs, versioned) = TechStackAuditor::parse_json(&two);
-        assert!(versioned.iter().any(|c| c.name == "Apache" && c.version == "2.4.7"));
+        assert!(versioned
+            .iter()
+            .any(|c| c.name == "Apache" && c.version == "2.4.7"));
         assert!(techs.contains(&"Apache".to_string()));
         // Pas de doublon Apache malgré deux documents
         assert_eq!(versioned.iter().filter(|c| c.name == "Apache").count(), 1);
@@ -635,9 +699,18 @@ mod tests {
     #[test]
     fn test_eol_verdict_old_branch() {
         let comps = vec![
-            TechComponent { name: "Apache".into(), version: "2.2.15".into() },
-            TechComponent { name: "PHP".into(), version: "7.4.33".into() },
-            TechComponent { name: "jQuery".into(), version: "1.12.4".into() },
+            TechComponent {
+                name: "Apache".into(),
+                version: "2.2.15".into(),
+            },
+            TechComponent {
+                name: "PHP".into(),
+                version: "7.4.33".into(),
+            },
+            TechComponent {
+                name: "jQuery".into(),
+                version: "1.12.4".into(),
+            },
         ];
         let verdicts = TechStackAuditor::version_verdicts(&comps);
         assert_eq!(verdicts.len(), 3, "2.2 / 7.4 / 1.12 sont toutes EOL");
@@ -652,16 +725,28 @@ mod tests {
     fn test_no_verdict_on_maintained_branch() {
         // 2.4.7 : branche 2.4 maintenue → patch-lag, PAS un EOL de branche
         let comps = vec![
-            TechComponent { name: "Apache".into(), version: "2.4.7".into() },
-            TechComponent { name: "Nginx".into(), version: "1.24.0".into() },
-            TechComponent { name: "PHP".into(), version: "8.3.1".into() },
+            TechComponent {
+                name: "Apache".into(),
+                version: "2.4.7".into(),
+            },
+            TechComponent {
+                name: "Nginx".into(),
+                version: "1.24.0".into(),
+            },
+            TechComponent {
+                name: "PHP".into(),
+                version: "8.3.1".into(),
+            },
         ];
         assert!(TechStackAuditor::version_verdicts(&comps).is_empty());
     }
 
     #[test]
     fn test_no_verdict_unknown_component() {
-        let comps = vec![TechComponent { name: "X-Custom-Thing".into(), version: "0.1".into() }];
+        let comps = vec![TechComponent {
+            name: "X-Custom-Thing".into(),
+            version: "0.1".into(),
+        }];
         assert!(TechStackAuditor::version_verdicts(&comps).is_empty());
     }
 

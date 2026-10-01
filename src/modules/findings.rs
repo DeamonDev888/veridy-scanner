@@ -546,7 +546,10 @@ impl FindingsEngine {
                     .iter()
                     .any(|m| m == "PUT" || m == "DELETE" || m == "TRACK");
             let (sev, extra) = if trace_only_dead {
-                ("LOW", " (TRACE annoncé dans Allow: mais non réfléchi par le serveur)")
+                (
+                    "LOW",
+                    " (TRACE annoncé dans Allow: mais non réfléchi par le serveur)",
+                )
             } else {
                 ("HIGH", "")
             };
@@ -609,7 +612,8 @@ impl FindingsEngine {
                     category: "TLS",
                     title: "Chaîne de confiance du certificat TLS invalide ou compromise".into(),
                     recommendation:
-                        "Renouveler immédiatement le certificat auprès d'une autorité reconnue.".into(),
+                        "Renouveler immédiatement le certificat auprès d'une autorité reconnue."
+                            .into(),
                 });
             }
         }
@@ -732,7 +736,7 @@ impl FindingsEngine {
                 severity: "INFO",
                 category: "GEO",
                 title: format!("Hébergement hors Canada détecté : Pays '{}'", geo.country_code.as_deref().unwrap_or("Inconnu")),
-                recommendation: "Information géographique issue du whois — vérifier la politique de transfert de données applicable à votre contexte.".into(),
+                recommendation: "Information géographique issue du whois — utile pour délimiter le périmètre dhébergement et identifier les fournisseurs impliqués.".into(),
             });
         }
         findings
@@ -809,8 +813,7 @@ mod tests {
     // sonde RDP binaire sur :3389 renvoie « HTTP/1.1 400 Bad Request ...
     // X-Iinfo: ... _Incapsula_Resource » — l edge parle HTTP sur un port RDP.
     const IMPERVA_400: &str = "HTTP/1.1 400 Bad Request";
-    const MYSQL_ACL_ERR: &str =
-        "Host x is not allowed to connect to this MySQL server";
+    const MYSQL_ACL_ERR: &str = "Host x is not allowed to connect to this MySQL server";
 
     #[test]
     fn test_http4xx_status_line_signature() {
@@ -820,7 +823,10 @@ mod tests {
             http4xx_status_line(Some(IMPERVA_400)).as_deref(),
             Some("HTTP/1.1 400")
         );
-        assert_eq!(http4xx_status_line(Some("HTTP/1.0 403 Forbidden")).as_deref(), Some("HTTP/1.0 403"));
+        assert_eq!(
+            http4xx_status_line(Some("HTTP/1.0 403 Forbidden")).as_deref(),
+            Some("HTTP/1.0 403")
+        );
         // Bannieres de VRAIS services : jamais une signature
         assert_eq!(http4xx_status_line(Some(MYSQL_ACL_ERR)), None);
         assert_eq!(http4xx_status_line(Some("220- Pure-FTPd [TLS]")), None);
@@ -837,26 +843,92 @@ mod tests {
         // Reproduit uniprix.com : 3+ ports non-web 400 identiques + ports
         // muets (21/3306 silencieux) + 2 ports web legitimes (80/443).
         let mut ports = vec![
-            PortScanResult { port: 80, is_open: true, service_hint: "HTTP", banner: Some("HTTP/1.1 301".into()), is_phantom_edge: false },
-            PortScanResult { port: 443, is_open: true, service_hint: "HTTPS", banner: None, is_phantom_edge: false },
-            PortScanResult { port: 3306, is_open: true, service_hint: "MySQL", banner: Some(IMPERVA_400.into()), is_phantom_edge: false },
-            PortScanResult { port: 6379, is_open: true, service_hint: "Redis", banner: Some(IMPERVA_400.into()), is_phantom_edge: false },
-            PortScanResult { port: 3389, is_open: true, service_hint: "RDP", banner: Some(IMPERVA_400.into()), is_phantom_edge: false },
-            PortScanResult { port: 21, is_open: true, service_hint: "FTP", banner: None, is_phantom_edge: false },
+            PortScanResult {
+                port: 80,
+                is_open: true,
+                service_hint: "HTTP",
+                banner: Some("HTTP/1.1 301".into()),
+                is_phantom_edge: false,
+            },
+            PortScanResult {
+                port: 443,
+                is_open: true,
+                service_hint: "HTTPS",
+                banner: None,
+                is_phantom_edge: false,
+            },
+            PortScanResult {
+                port: 3306,
+                is_open: true,
+                service_hint: "MySQL",
+                banner: Some(IMPERVA_400.into()),
+                is_phantom_edge: false,
+            },
+            PortScanResult {
+                port: 6379,
+                is_open: true,
+                service_hint: "Redis",
+                banner: Some(IMPERVA_400.into()),
+                is_phantom_edge: false,
+            },
+            PortScanResult {
+                port: 3389,
+                is_open: true,
+                service_hint: "RDP",
+                banner: Some(IMPERVA_400.into()),
+                is_phantom_edge: false,
+            },
+            PortScanResult {
+                port: 21,
+                is_open: true,
+                service_hint: "FTP",
+                banner: None,
+                is_phantom_edge: false,
+            },
         ];
         PortScanner::detect_uniform_edge(&mut ports);
         // Edge confirme : ports non-web 400 + muets marques fantomes
-        assert!(ports.iter().find(|p| p.port == 3306).unwrap().is_phantom_edge);
-        assert!(ports.iter().find(|p| p.port == 6379).unwrap().is_phantom_edge);
-        assert!(ports.iter().find(|p| p.port == 3389).unwrap().is_phantom_edge);
+        assert!(
+            ports
+                .iter()
+                .find(|p| p.port == 3306)
+                .unwrap()
+                .is_phantom_edge
+        );
+        assert!(
+            ports
+                .iter()
+                .find(|p| p.port == 6379)
+                .unwrap()
+                .is_phantom_edge
+        );
+        assert!(
+            ports
+                .iter()
+                .find(|p| p.port == 3389)
+                .unwrap()
+                .is_phantom_edge
+        );
         assert!(ports.iter().find(|p| p.port == 21).unwrap().is_phantom_edge);
         // Ports web legitimes jamais touches
         assert!(!ports.iter().find(|p| p.port == 80).unwrap().is_phantom_edge);
-        assert!(!ports.iter().find(|p| p.port == 443).unwrap().is_phantom_edge);
+        assert!(
+            !ports
+                .iter()
+                .find(|p| p.port == 443)
+                .unwrap()
+                .is_phantom_edge
+        );
         // Findings : PLUS AUCUN HIGH fantome, un seul INFO agrege
         let f = FindingsEngine::eval_ports(&ports, "uniprix.com");
-        assert!(f.iter().all(|x| x.severity == "INFO" || x.severity == "LOW"), "findings: {f:?}");
-        let agg = f.iter().find(|x| x.title.contains("edge répond uniformément"));
+        assert!(
+            f.iter()
+                .all(|x| x.severity == "INFO" || x.severity == "LOW"),
+            "findings: {f:?}"
+        );
+        let agg = f
+            .iter()
+            .find(|x| x.title.contains("edge répond uniformément"));
         assert!(agg.is_some(), "finding INFO agrege absent: {f:?}");
         assert_eq!(agg.unwrap().severity, "INFO");
     }
@@ -864,14 +936,20 @@ mod tests {
     #[test]
     fn test_uniform_edge_not_triggered_below_threshold() {
         use crate::modules::ports::PortScanResult;
-        let mut ports = vec![
-            PortScanResult { port: 2375, is_open: true, service_hint: "Docker", banner: Some("HTTP/1.1 400 Bad Request".into()), is_phantom_edge: false },
-        ];
+        let mut ports = vec![PortScanResult {
+            port: 2375,
+            is_open: true,
+            service_hint: "Docker",
+            banner: Some("HTTP/1.1 400 Bad Request".into()),
+            is_phantom_edge: false,
+        }];
         crate::modules::ports::PortScanner::detect_uniform_edge(&mut ports);
         // 1 seul port 400 : sous le seuil (EDGE_UNIFORM_MIN=3), pas de marquage
         assert!(!ports[0].is_phantom_edge);
         let f = FindingsEngine::eval_ports(&ports, "example.com");
-        assert!(!f.iter().any(|x| x.title.contains("edge répond uniformément")));
+        assert!(!f
+            .iter()
+            .any(|x| x.title.contains("edge répond uniformément")));
     }
 
     #[test]
@@ -879,13 +957,19 @@ mod tests {
         use crate::modules::ports::{PortScanResult, PortScanner};
         // Vrai mysqld (sunyouth/cegepgarneau capture) : la banniere ACL MySQL
         // n est PAS une signature HTTP -> jamais fantome, finding HIGH conserve.
-        let mut ports = vec![
-            PortScanResult { port: 3306, is_open: true, service_hint: "MySQL", banner: Some(MYSQL_ACL_ERR.into()), is_phantom_edge: false },
-        ];
+        let mut ports = vec![PortScanResult {
+            port: 3306,
+            is_open: true,
+            service_hint: "MySQL",
+            banner: Some(MYSQL_ACL_ERR.into()),
+            is_phantom_edge: false,
+        }];
         PortScanner::detect_uniform_edge(&mut ports);
         assert!(!ports[0].is_phantom_edge);
         let f = FindingsEngine::eval_ports(&ports, "sunyouth.org");
-        assert!(f.iter().any(|x| x.severity == "HIGH" && x.title.contains("3306")));
+        assert!(f
+            .iter()
+            .any(|x| x.severity == "HIGH" && x.title.contains("3306")));
     }
 
     #[test]
@@ -902,9 +986,15 @@ mod tests {
             ..Default::default()
         };
         let f = FindingsEngine::eval_tls(&tls);
-        assert!(!f.iter().any(|x| x.severity == "CRITICAL"), "findings: {f:?}");
+        assert!(
+            !f.iter().any(|x| x.severity == "CRITICAL"),
+            "findings: {f:?}"
+        );
         let m = f.iter().find(|x| x.title.contains("incomplète"));
-        assert!(m.is_some(), "finding MEDIUM chaine incomplete absent: {f:?}");
+        assert!(
+            m.is_some(),
+            "finding MEDIUM chaine incomplete absent: {f:?}"
+        );
         assert_eq!(m.unwrap().severity, "MEDIUM");
     }
 
@@ -914,13 +1004,16 @@ mod tests {
         let tls = TlsAuditResult {
             subject: Some("CN=evil.example".into()),
             issues: vec![
-                "Erreur de chaîne de confiance : Verification error: certificate signature failure".into(),
+                "Erreur de chaîne de confiance : Verification error: certificate signature failure"
+                    .into(),
             ],
             is_valid: false,
             ..Default::default()
         };
         let f = FindingsEngine::eval_tls(&tls);
-        assert!(f.iter().any(|x| x.severity == "CRITICAL" && x.title.contains("invalide ou compromise")));
+        assert!(f
+            .iter()
+            .any(|x| x.severity == "CRITICAL" && x.title.contains("invalide ou compromise")));
     }
 
     #[test]
@@ -976,7 +1069,8 @@ mod tests {
             service_hint: "postgresql",
             banner: None,
 
-            is_phantom_edge: false,        }];
+            is_phantom_edge: false,
+        }];
         let f = FindingsEngine::eval_ports(&ports, "127.0.0.1");
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].severity, "INFO");
@@ -994,14 +1088,16 @@ mod tests {
                 service_hint: "http",
                 banner: Some("ssh".into()),
 
-                is_phantom_edge: false,            },
+                is_phantom_edge: false,
+            },
             PortScanResult {
                 port: 23,
                 is_open: true,
                 service_hint: "telnet",
                 banner: None,
 
-                is_phantom_edge: false,            },
+                is_phantom_edge: false,
+            },
         ];
         let f = FindingsEngine::eval_ports(&ports, "example.com");
         assert_eq!(f.len(), 1);

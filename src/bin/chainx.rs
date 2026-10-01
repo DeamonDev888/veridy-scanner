@@ -47,6 +47,10 @@ fn run_bin(bin: &str, args: &[&str], stdin_data: Option<&str>) -> (u16, String) 
     } else {
         Stdio::null()
     });
+    // Indispensable : sans pipe explicite, stdout est hérité du parent et
+    // wait_with_output() renvoie TOUJOURS un stdout vide (bug historique :
+    // tous les verdicts tombaient en fallback EXIT<code>).
+    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
     let Ok(mut child) = cmd.spawn() else {
         return (127, String::new());
     };
@@ -121,12 +125,10 @@ fn dispatch_target(target: &str, force: bool) {
     if has("DNS", "dmarc") || has("DNS", "spf") {
         if force || !has_recent_verdict("spoofcheck", target) {
             let (code, out) = run_bin("spoofcheck", &[target], None);
-            let verdict = out
-                .lines()
-                .find_map(|l| {
-                    l.strip_prefix("VERDICT")
-                        .map(|v| v.trim_start_matches(':').trim().to_string())
-                })
+            // spoofcheck émet « VERDICT   : PARTIEL » (clé en majuscules,
+            // espaces variables) — même parse robuste que les bins DB.
+            let verdict = parse_kv_line(&out, "VERDICT")
+                .filter(|v| !v.is_empty())
                 .unwrap_or_else(|| format!("EXIT{code}"));
             println!("  spoofcheck → {verdict}");
             save_verdict(
@@ -160,6 +162,37 @@ fn dispatch_target(target: &str, force: bool) {
             &out.lines().take(3).collect::<Vec<_>>().join(" | "),
             "",
         );
+    }
+
+    // 2bis. bases de données exposées → mysqlx / redisx / mongodx
+    // (findings « Port de base de données N (Service) exposé publiquement »).
+    // Ces bins lisent le greeting protocole (une seule connexion, zéro
+    // credential) et persistent eux-mêmes leur verdict dans audit_impact :
+    // chainx ne fait que les déclencher au bon moment.
+    for f in &findings {
+        if f.len() < 3 || f[0] != "PORT" || !f[2].contains("base de données") {
+            continue;
+        }
+        let Some(bin) = db_bin_for_finding(&f[2]) else {
+            continue;
+        };
+        if !force && has_recent_verdict(bin, target) {
+            println!("  {bin} → déjà verdict <24h (skip, --force pour re-pipe)");
+            continue;
+        }
+        let (_, out) = run_bin(bin, &[target], None);
+        let verdict = parse_kv_line(&out, "verdict")
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "INJOIGNABLE".to_string());
+        let detail = parse_kv_line(&out, "détail")
+            .or_else(|| parse_kv_line(&out, "detail"))
+            .unwrap_or_default();
+        println!("  {bin} → {verdict}");
+        // Le bin persiste déjà son verdict : ne passer par save_verdict que
+        // si l'appel a échoué (binaire absent, exit 127) pour le tracer.
+        if verdict == "INJOIGNABLE" && detail.is_empty() && out.is_empty() {
+            save_verdict(bin, target, "ERREUR_EXECUTION", "binaire introuvable", "");
+        }
     }
 
     // 3. gates envx/gitdump sur WEB CRITICAL confirmés
@@ -214,20 +247,25 @@ fn dispatch_target(target: &str, force: bool) {
         t = esc(target),
     ));
     if !keys.is_empty() && (force || !has_recent_verdict("keyprobe", target)) {
-        let key = &keys[0][0];
-        let (code, out) = run_bin("keyprobe", &[], Some(&format!("{key}\n")));
+        // Toutes les clés en stdin (keyprobe boucle ligne par ligne) :
+        // une seule exécution, verdict global, nombre de clés dans la preuve.
+        let all_keys = keys
+            .iter()
+            .filter_map(|r| r.first().cloned())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let (code, out) = run_bin("keyprobe", &[], Some(&format!("{all_keys}\n")));
         let verdict = if code == 0 { "VALIDE" } else { "INVALIDE" };
         println!("  keyprobe → {verdict} ({} clé(s))", keys.len());
         save_verdict(
             "keyprobe",
             target,
             verdict,
-            out.lines().next().unwrap_or(""),
-            &format!(
-                "{}**** ({} chars)",
-                &key[..4.min(key.len())],
-                key.chars().count()
-            ),
+            &out.lines()
+                .take(keys.len().min(3))
+                .collect::<Vec<_>>()
+                .join(" | "),
+            &format!("{} clé(s) vérifiée(s) — masquées", keys.len()),
         );
     }
 
@@ -288,12 +326,35 @@ fn main() {
         targets.len()
     );
     println!(
-        "Chaîne sûre : spoofcheck · ftpx · envx/gitdump · keyprobe · subalive/cnametake/surfx"
+        "Chaîne sûre : spoofcheck · ftpx · mysqlx/redisx/mongodx · envx/gitdump · keyprobe · subalive/cnametake/surfx"
     );
     for t in &targets {
         dispatch_target(t, force);
     }
     println!("\nVerdicts persistés — `impacts` pour le tableau de bord complet.");
+}
+
+/// Extrait le verdict depuis la sortie standard d'un bin d'impact
+/// (lignes « verdict  : X » / « détail   : Y » — espaces variables).
+fn parse_kv_line(out: &str, key: &str) -> Option<String> {
+    out.lines().find_map(|l| {
+        l.strip_prefix(key)
+            .map(|v| v.trim().trim_start_matches(':').trim().to_string())
+    })
+}
+
+/// Choisit le bin de preuve DB adapté à un finding PORT de base de données.
+fn db_bin_for_finding(title: &str) -> Option<&'static str> {
+    let t = title.to_lowercase();
+    if t.contains("mysql") {
+        Some("mysqlx")
+    } else if t.contains("redis") {
+        Some("redisx")
+    } else if t.contains("mongo") {
+        Some("mongodx")
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -306,5 +367,44 @@ mod tests {
         assert!(super::excluded("example.com"));
         assert!(!super::excluded("metro.ca"));
         assert!(!super::excluded("savardplouffe.com"));
+    }
+
+    #[test]
+    fn parse_kv_verdict_avec_espaces_variables() {
+        let out = "hôte     : metro.ca\nverdict  : MYSQL_ACL_REFUS\ndétail   : greeting 8.0.36\npreuve   : x";
+        assert_eq!(
+            super::parse_kv_line(out, "verdict").as_deref(),
+            Some("MYSQL_ACL_REFUS")
+        );
+        assert_eq!(
+            super::parse_kv_line(out, "détail").as_deref(),
+            Some("greeting 8.0.36")
+        );
+        assert_eq!(super::parse_kv_line(out, "absent"), None);
+    }
+
+    #[test]
+    fn db_bin_mapping_findings_port() {
+        assert_eq!(
+            super::db_bin_for_finding("Port de base de données 3306 (MySQL) exposé publiquement"),
+            Some("mysqlx")
+        );
+        assert_eq!(
+            super::db_bin_for_finding("Port de base de données 6379 (Redis) exposé publiquement"),
+            Some("redisx")
+        );
+        assert_eq!(
+            super::db_bin_for_finding(
+                "Port de base de données 27017 (MongoDB) exposé publiquement"
+            ),
+            Some("mongodx")
+        );
+        // Postgres (5432) : pas de bin dédié → None (pas de dispatch inventé)
+        assert_eq!(
+            super::db_bin_for_finding(
+                "Port de base de données 5432 (PostgreSQL) exposé publiquement"
+            ),
+            None
+        );
     }
 }

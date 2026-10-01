@@ -26,7 +26,14 @@ impl CrtShAuditor {
         let url = format!("https://crt.sh/?q=%25.{domain}&output=json");
         let out = crate::utils::run_tool(
             "curl",
-            &["-s", "--max-time", "25", "-H", "Accept: application/json", &url],
+            &[
+                "-s",
+                "--max-time",
+                "25",
+                "-H",
+                "Accept: application/json",
+                &url,
+            ],
             30,
         );
         let body = out
@@ -87,10 +94,16 @@ impl CrtShAuditor {
 
     /// Fusionne les hotes crt.sh dans la liste existante (dedup par nom).
     /// Retourne le nombre d'hotes nouvellement ajoutes.
-    pub fn merge_into(subs: &mut Vec<crate::modules::subdomains::SubdomainResult>, crt: &CrtShResult) -> usize {
+    pub fn merge_into(
+        subs: &mut Vec<crate::modules::subdomains::SubdomainResult>,
+        crt: &CrtShResult,
+    ) -> usize {
         let mut added = 0;
         for c in &crt.subdomains {
-            if !subs.iter().any(|s| s.subdomain.eq_ignore_ascii_case(&c.subdomain)) {
+            if !subs
+                .iter()
+                .any(|s| s.subdomain.eq_ignore_ascii_case(&c.subdomain))
+            {
                 subs.push(c.clone());
                 added += 1;
             }
@@ -117,7 +130,10 @@ mod tests {
             if let Some(nv) = entry.get("name_value").and_then(|x| x.as_str()) {
                 for name in nv.split(['\n', ' ']) {
                     let n = name.trim().trim_end_matches('.').to_lowercase();
-                    if (n == base || n.ends_with(&format!(".{base}"))) && !n.starts_with("*.") && !n.is_empty() {
+                    if (n == base || n.ends_with(&format!(".{base}")))
+                        && !n.starts_with("*.")
+                        && !n.is_empty()
+                    {
                         seen.insert(n);
                     }
                 }
@@ -125,9 +141,18 @@ mod tests {
         }
         let list: Vec<String> = seen.into_iter().collect();
         assert!(list.contains(&"8brains.ca".to_string()));
-        assert!(list.contains(&"blog.8brains.ca".to_string()), "sous-domaine historique conservé");
-        assert!(!list.iter().any(|x| x.contains("evil8brains")), "hors scope rejeté");
-        assert!(!list.iter().any(|x| x.contains("other.com")), "hors scope rejeté");
+        assert!(
+            list.contains(&"blog.8brains.ca".to_string()),
+            "sous-domaine historique conservé"
+        );
+        assert!(
+            !list.iter().any(|x| x.contains("evil8brains")),
+            "hors scope rejeté"
+        );
+        assert!(
+            !list.iter().any(|x| x.contains("other.com")),
+            "hors scope rejeté"
+        );
         assert_eq!(list.len(), 2);
     }
 
@@ -136,20 +161,39 @@ mod tests {
         let crt = CrtShResult {
             success: true,
             subdomains: vec![
-                SubdomainResult { subdomain: "blog.8brains.ca".into(), source: "crt.sh".into(), ip_address: None, http_status: None, is_alive: false },
-                SubdomainResult { subdomain: "www.8brains.ca".into(), source: "crt.sh".into(), ip_address: None, http_status: None, is_alive: false },
+                SubdomainResult {
+                    subdomain: "blog.8brains.ca".into(),
+                    source: "crt.sh".into(),
+                    ip_address: None,
+                    http_status: None,
+                    is_alive: false,
+                },
+                SubdomainResult {
+                    subdomain: "www.8brains.ca".into(),
+                    source: "crt.sh".into(),
+                    ip_address: None,
+                    http_status: None,
+                    is_alive: false,
+                },
             ],
             ..Default::default()
         };
-        let mut subs = vec![
-            SubdomainResult { subdomain: "www.8brains.ca".into(), source: "subfinder".into(), ip_address: None, http_status: Some(200), is_alive: true },
-        ];
+        let mut subs = vec![SubdomainResult {
+            subdomain: "www.8brains.ca".into(),
+            source: "subfinder".into(),
+            ip_address: None,
+            http_status: Some(200),
+            is_alive: true,
+        }];
         let n = CrtShAuditor::merge_into(&mut subs, &crt);
         assert_eq!(n, 1, "seul blog.8brains.ca est nouveau");
         assert_eq!(subs.len(), 2);
         assert!(subs.iter().any(|s| s.subdomain == "blog.8brains.ca"));
         // Le www existant garde ses donnees vivantes (pas ecrase)
-        let www = subs.iter().find(|s| s.subdomain == "www.8brains.ca").unwrap();
+        let www = subs
+            .iter()
+            .find(|s| s.subdomain == "www.8brains.ca")
+            .unwrap();
         assert!(www.is_alive && www.http_status == Some(200));
     }
 }

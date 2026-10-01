@@ -118,7 +118,12 @@ impl DatabaseManager {
             tx.execute(
                 "INSERT INTO audit_dns_records (scan_id, record_type, record_value, is_secure) \
                  VALUES ($1, $2, $3, $4)",
-                &[&scan_id, &d.record_type, &strip_nul_bytes(&d.value), &d.is_secure],
+                &[
+                    &scan_id,
+                    &d.record_type,
+                    &strip_nul_bytes(&d.value),
+                    &d.is_secure,
+                ],
             )
             .map_err(|e| format!("audit_dns_records : {e}"))?;
         }
@@ -128,7 +133,12 @@ impl DatabaseManager {
             tx.execute(
                 "INSERT INTO audit_ports (scan_id, port, service, state, banner) \
                  VALUES ($1, $2, $3, 'OPEN', $4)",
-                &[&scan_id, &(p.port as i32), &strip_nul_bytes(p.service_hint), &p.banner.as_deref().map(strip_nul_bytes)],
+                &[
+                    &scan_id,
+                    &(p.port as i32),
+                    &strip_nul_bytes(p.service_hint),
+                    &p.banner.as_deref().map(strip_nul_bytes),
+                ],
             )
             .map_err(|e| format!("audit_ports : {e}"))?;
         }
@@ -138,7 +148,12 @@ impl DatabaseManager {
             tx.execute(
                 "INSERT INTO audit_http_headers (scan_id, header_name, header_value, evaluation) \
                  VALUES ($1, $2, $3, $4)",
-                &[&scan_id, &strip_nul_bytes(&h.name), &strip_nul_bytes(&h.value), &h.evaluation],
+                &[
+                    &scan_id,
+                    &strip_nul_bytes(&h.name),
+                    &strip_nul_bytes(&h.value),
+                    &h.evaluation,
+                ],
             )
             .map_err(|e| format!("audit_http_headers : {e}"))?;
         }
@@ -370,9 +385,8 @@ impl DatabaseManager {
                 &ts.raw_output,
             )?;
             // Composants versionnés -> audit_tech (verdict EOL calculé par le module)
-            let verdicts = crate::modules::tech_stack::TechStackAuditor::version_verdicts(
-                &ts.versioned,
-            );
+            let verdicts =
+                crate::modules::tech_stack::TechStackAuditor::version_verdicts(&ts.versioned);
             for comp in &ts.versioned {
                 let v = verdicts
                     .iter()
@@ -390,6 +404,102 @@ impl DatabaseManager {
                 .map_err(|e| format!("audit_tech : {e}"))?;
             }
         }
+
+        // === audit_tech FALLBACK (post-livraison v0.5.5) ============================
+        // whatweb echoue / est muet derriere Cloudflare/BitNinja (scan 487/488/489)
+        // ou ne retourne AUCUN composant versionne (scan 480 dessinsdrummond).
+        // On agrege alors les en-tetes HTTP deja collectes (Server, X-Powered-By)
+        // et les technologies detectees par httpx sur les sous-domaines vivants
+        // (cas 486 sunyouth WordPress 7.1.2 sur sous-domaine).
+        //
+        // Source 'whatweb' : cas normal, deja insere ci-dessus.
+        // Source 'http-header' : fallback depuis en-tetes HTTP de la cible principale.
+        // Source 'httpx' : technologies detectees sur sous-domaines via httpx.
+        //
+        // DEDUP stricte par (name, version) : un meme composant depuis plusieurs
+        // sources n'est insere qu'une fois.
+        let mut tech_seen: std::collections::HashSet<(String, String)> =
+            std::collections::HashSet::new();
+        if let Some(ref ts) = report.tech_stack {
+            for c in &ts.versioned {
+                tech_seen.insert((c.name.clone(), c.version.clone()));
+            }
+        }
+
+        // Source: http-header (Server / X-Powered-By)
+        let header_inserts: Vec<(String, String)> = {
+            let mut v = Vec::new();
+            if let Some(srv) = report.http.server_header.as_deref() {
+                if let Some((n, vv)) = audit_tech_parse_token(srv) {
+                    v.push((n, vv));
+                }
+            }
+            if let Some(pb) = report.http.powered_by.as_deref() {
+                if let Some((n, vv)) = audit_tech_parse_token(pb) {
+                    v.push((n, vv));
+                }
+            }
+            v
+        };
+        for (name, version) in &header_inserts {
+            if !tech_seen.insert((name.clone(), version.clone())) {
+                continue;
+            }
+            let v = crate::modules::tech_stack::TechStackAuditor::version_verdicts(&[
+                crate::modules::tech_stack::TechComponent {
+                    name: name.clone(),
+                    version: version.clone(),
+                },
+            ]);
+            let v0 = v.first();
+            tx.execute(
+                "INSERT INTO audit_tech (scan_id, name, version, source, is_eol, branch_min) VALUES ($1, $2, $3, 'http-header', $4, $5)",
+                &[
+                    &scan_id,
+                    &strip_nul_bytes(name),
+                    &strip_nul_bytes(version),
+                    &v0.is_some(),
+                    &v0.map(|x| strip_nul_bytes(&x.branch_min)),
+                ],
+            )
+            .map_err(|e| format!("audit_tech http-header : {e}"))?;
+        }
+
+        // Source: httpx (technologies des sous-domaines vivants)
+        if let Some(ref hp) = report.http_probe {
+            for probe in hp.iter() {
+                if probe.status_code.is_none() {
+                    continue;
+                }
+                for t in &probe.technologies {
+                    if let Some((name, version)) = audit_tech_parse_httpx_token(t) {
+                        if !tech_seen.insert((name.clone(), version.clone())) {
+                            continue;
+                        }
+                        let v = crate::modules::tech_stack::TechStackAuditor::version_verdicts(&[
+                            crate::modules::tech_stack::TechComponent {
+                                name: name.clone(),
+                                version: version.clone(),
+                            },
+                        ]);
+                        let v0 = v.first();
+                        tx.execute(
+                            "INSERT INTO audit_tech (scan_id, name, version, source, is_eol, branch_min) VALUES ($1, $2, $3, 'httpx', $4, $5)",
+                            &[
+                                &scan_id,
+                                &strip_nul_bytes(&name),
+                                &strip_nul_bytes(&version),
+                                &v0.is_some(),
+                                &v0.map(|x| strip_nul_bytes(&x.branch_min)),
+                            ],
+                        )
+                        .map_err(|e| format!("audit_tech httpx : {e}"))?;
+                    }
+                }
+            }
+        }
+        // === FIN audit_tech FALLBACK ==================================================
+
         if let Some(ref ss) = report.sslscan {
             let total = ss.strong_ciphers_count + ss.weak_ciphers.len();
             append_tool_output(
@@ -766,8 +876,7 @@ pub(crate) fn strip_nul_bytes(s: &str) -> String {
 /// \u0000 déjà présents dans le document sérialisé doivent disparaître,
 /// sinon le cast serveur ::jsonb échoue (séquence d'échappement non supportée).
 pub(crate) fn strip_nul_json(s: &str) -> String {
-    s.replace('\u{0}', "")
-      .replace("\\u0000", "")
+    s.replace('\u{0}', "").replace("\\u0000", "")
 }
 
 /// Troncature UTF-8 safe AVANT binding paramétré. Aucun échappement SQL ici :
@@ -821,4 +930,168 @@ fn append_tool_output(
     )
     .map_err(|e| format!("audit_tool_outputs ({tool_name}) : {e}"))?;
     Ok(())
+}
+
+/// Extrait (name, version) depuis un token "Product/1.2.3".
+/// Retourne None si le token est vide, ressemble a un placeholder (cloudflare),
+/// ou ne contient pas de version exploitable.
+///
+/// Utilise pour audit_tech fallback depuis http.server_header et X-Powered-By.
+/// Ex: "Apache/2.4.7 (Ubuntu)" -> Some(("Apache", "2.4.7"))
+///     "PHP/8.2.0"            -> Some(("PHP", "8.2.0"))
+///     "cloudflare"           -> None (placeholder sans version)
+///     "Apache"               -> None (pas de version dans le token)
+fn audit_tech_parse_token(raw: &str) -> Option<(String, String)> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let head = s.split([' ', '(', ',', ';']).next().unwrap_or("");
+    let head = head.trim();
+    if head.is_empty() || !head.contains('/') {
+        return None;
+    }
+    let (name, ver_part) = head.split_once('/')?;
+    let name = name.trim();
+    if name.is_empty() || name.len() > 64 {
+        return None;
+    }
+    let lower = name.to_ascii_lowercase();
+    if matches!(
+        lower.as_str(),
+        "cloudflare"
+            | "varnish"
+            | "bunnynet"
+            | "ddos-guard"
+            | "imperva"
+            | "incapsula"
+            | "bitninja"
+            | "akamai"
+            | "fastly"
+            | "sucuri"
+    ) {
+        return None;
+    }
+    let ver = ver_part.trim().trim_start_matches('v');
+    let mut acc = String::new();
+    let mut saw_digit = false;
+    let mut saw_dot = false;
+    for c in ver.chars() {
+        if c.is_ascii_digit() {
+            acc.push(c);
+            saw_digit = true;
+        } else if c == '.' && saw_digit {
+            acc.push(c);
+            saw_dot = true;
+        } else {
+            break;
+        }
+    }
+    if !saw_digit || !saw_dot {
+        return None;
+    }
+    let ver = acc.trim_end_matches('.').to_string();
+    if ver.is_empty() {
+        return None;
+    }
+    Some((name.to_string(), ver))
+}
+
+/// Extrait (name, version) depuis une entree httpx "Name:Version".
+fn audit_tech_parse_httpx_token(raw: &str) -> Option<(String, String)> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    if let Some((name, ver)) = s.split_once(':') {
+        let name = name.trim();
+        let ver = ver.trim();
+        if name.is_empty() || name.len() > 64 || ver.is_empty() {
+            return None;
+        }
+        if !ver.chars().any(|c| c.is_ascii_digit()) || !ver.contains('.') {
+            return None;
+        }
+        return Some((name.to_string(), ver.to_string()));
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests_fallback {
+    use super::*;
+
+    #[test]
+    fn parse_token_php_version() {
+        assert_eq!(
+            audit_tech_parse_token("PHP/8.2.0"),
+            Some(("PHP".into(), "8.2.0".into()))
+        );
+    }
+
+    #[test]
+    fn parse_token_apache_with_parens() {
+        assert_eq!(
+            audit_tech_parse_token("Apache/2.4.7 (Ubuntu)"),
+            Some(("Apache".into(), "2.4.7".into()))
+        );
+    }
+
+    #[test]
+    fn parse_token_no_version_returns_none() {
+        assert_eq!(audit_tech_parse_token("Apache"), None);
+        assert_eq!(audit_tech_parse_token(""), None);
+    }
+
+    #[test]
+    fn parse_token_filters_waf_placeholders() {
+        assert_eq!(audit_tech_parse_token("cloudflare"), None);
+        assert_eq!(audit_tech_parse_token("Imperva"), None);
+        assert_eq!(audit_tech_parse_token("BitNinja"), None);
+        assert_eq!(audit_tech_parse_token("Cloudflare/1.0"), None);
+    }
+
+    #[test]
+    fn parse_token_v_prefix() {
+        assert_eq!(
+            audit_tech_parse_token("TLS/v1.3"),
+            Some(("TLS".into(), "1.3".into()))
+        );
+    }
+
+    #[test]
+    fn parse_token_comma_in_string() {
+        assert_eq!(
+            audit_tech_parse_token("Apache/2.4.7, nginx/1.22.1"),
+            Some(("Apache".into(), "2.4.7".into()))
+        );
+    }
+
+    #[test]
+    fn parse_httpx_wordpress_version() {
+        assert_eq!(
+            audit_tech_parse_httpx_token("WordPress:7.1.2"),
+            Some(("WordPress".into(), "7.1.2".into()))
+        );
+    }
+
+    #[test]
+    fn parse_httpx_site_kit() {
+        assert_eq!(
+            audit_tech_parse_httpx_token("Site Kit:1.188.0"),
+            Some(("Site Kit".into(), "1.188.0".into()))
+        );
+    }
+
+    #[test]
+    fn parse_httpx_no_version_returns_none() {
+        assert_eq!(audit_tech_parse_httpx_token("Apache HTTP Server"), None);
+        assert_eq!(audit_tech_parse_httpx_token("Laravel"), None);
+        assert_eq!(audit_tech_parse_httpx_token(""), None);
+    }
+
+    #[test]
+    fn parse_httpx_version_too_short_returns_none() {
+        assert_eq!(audit_tech_parse_httpx_token("Foo:1"), None);
+    }
 }

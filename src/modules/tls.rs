@@ -123,6 +123,11 @@ impl TlsAuditor {
                 sni_args[0],
                 sni_args[1],
                 "-tls1",
+                // Override MinProtocol (openssl.cnf Kali = TLSv1.2) : sans ce
+                // flag le client refuse le handshake AVANT d'interroger le
+                // serveur et la détection TLS 1.0 est morte de facto.
+                "-min_protocol",
+                "TLSv1",
             ],
             10,
         ) {
@@ -150,6 +155,8 @@ impl TlsAuditor {
                 sni_args[0],
                 sni_args[1],
                 "-tls1_1",
+                "-min_protocol",
+                "TLSv1",
             ],
             10,
         ) {
