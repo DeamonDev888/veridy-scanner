@@ -189,7 +189,7 @@ cargo build --release
 
 # 2. Déploiement global (bin principal + modules d'impact + TUI) :
 sudo cp target/release/veridy_scanner /usr/local/bin/veridy_scanner
-for b in chainx envx gitdump keyprobe gkeyx spoofcheck subalive surfx cnametake cnamewatch ftpx ftplx lootx impacts mysqlx redisx mongodx; do
+for b in chainx envx gitdump keyprobe gkeyx spoofcheck subalive surfx cnametake cnamewatch ftpx ftplx lootx impacts mysqlx redisx mongodx elasticx; do
   sudo cp target/release/$b /usr/local/bin/$b
 done
 sudo cp launch.sh /usr/local/bin/veridy
@@ -232,7 +232,7 @@ cargo clippy --all-targets -- -D warnings  # strict : 0 warning obligatoire
 
 ---
 
-## 🧩 17 modules d'impact intégrés (même crate depuis v0.5.0)
+## 🧩 18 modules d'impact intégrés (même crate depuis v0.5.0)
 
 > Depuis la v0.5.0, les modules d'impact font **partie de `veridy_scanner`** (la crate `veridy-impact` a été yankée sur crates.io — un seul crate, un seul `cargo install`).
 
@@ -256,6 +256,7 @@ Tous lecture-seule stricte (GET/DNS uniquement). Verdicts persistés dans `audit
 | `veridy_scanner mysqlx <hôte>` | Preuve d'exposition MySQL (greeting :3306, zéro credential) |
 | `veridy_scanner redisx <hôte>` | Preuve d'exposition Redis (PING :6379, lecture seule) |
 | `veridy_scanner mongodx <hôte>` | Preuve d'exposition MongoDB (hello OP_MSG :27017) |
+| `veridy_scanner elasticx <hôte> [port]` | Preuve d'exposition Elasticsearch (GET / :9200, lecture seule) |
 | `veridy_scanner impacts [--live]` | Dashboard DB + re-vérification live des clés |
 
 ```bash

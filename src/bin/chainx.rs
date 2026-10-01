@@ -326,7 +326,7 @@ fn main() {
         targets.len()
     );
     println!(
-        "Chaîne sûre : spoofcheck · ftpx · mysqlx/redisx/mongodx · envx/gitdump · keyprobe · subalive/cnametake/surfx"
+        "Chaîne sûre : spoofcheck · ftpx · mysqlx/redisx/mongodx/elasticx · envx/gitdump · keyprobe · subalive/cnametake/surfx"
     );
     for t in &targets {
         dispatch_target(t, force);
@@ -352,6 +352,8 @@ fn db_bin_for_finding(title: &str) -> Option<&'static str> {
         Some("redisx")
     } else if t.contains("mongo") {
         Some("mongodx")
+    } else if t.contains("elastic") {
+        Some("elasticx")
     } else {
         None
     }
@@ -392,6 +394,12 @@ mod tests {
         assert_eq!(
             super::db_bin_for_finding("Port de base de données 6379 (Redis) exposé publiquement"),
             Some("redisx")
+        );
+        assert_eq!(
+            super::db_bin_for_finding(
+                "Port de base de données 9200 (Elasticsearch) exposé publiquement"
+            ),
+            Some("elasticx")
         );
         assert_eq!(
             super::db_bin_for_finding(

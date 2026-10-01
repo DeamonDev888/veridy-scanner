@@ -365,10 +365,22 @@ impl TechStackAuditor {
             .filter_map(|c| {
                 let pv = parse_version(&c.version)?;
                 let branch = [pv[0], pv[1]];
-                let lower = c.name.to_lowercase();
-                let (_, threshold) = THRESHOLDS
-                    .iter()
-                    .find(|(k, _)| lower.contains(k))?;
+                // Matching par MOTS ENTIERS : "Apache HTTP Server" -> mots
+                // [apache, http, server] matche "apache" ; "mod_perl" est UN
+                // seul mot (underscore intra-mot) et ne matche plus "perl".
+                // Un contains() nu faisait des faux EOL sur les wrappers
+                // embarquant un nom de langage (mod_perl vs perl).
+                let words: Vec<String> = c
+                    .name
+                    .to_lowercase()
+                    .split([' ', '/', '-'])
+                    .filter(|w| !w.is_empty())
+                    .map(|w| w.to_string())
+                    .collect();
+                let (_, threshold) = THRESHOLDS.iter().find(|(k, _)| {
+                    words.iter().any(|w| w == k)
+                        || c.name.to_lowercase().starts_with(k)
+                })?;
                 if branch >= *threshold {
                     return None; // branche maintenue (patch-lag ≠ EOL)
                 }
@@ -520,6 +532,8 @@ fn products_from_server_banner(banner: &str) -> Vec<(String, String)> {
 /// Un token ressemble à une version s'il commence par un chiffre et contient
 /// au moins un point OU au moins deux chiffres ("3", "2.4.7", "1.22").
 /// "Universal", "RESERVED" etc. sont exclus d'office.
+/// Un bloc de 8+ chiffres purs (epoch de cache-busting ?ver=1715007332)
+/// n'est PAS une version : rejet explicite (bug vu live uqac.ca JQuery).
 fn looks_like_version(s: &str) -> bool {
     let t = s.trim().trim_start_matches(['v', 'V']);
     let mut chars = t.chars();
@@ -527,6 +541,11 @@ fn looks_like_version(s: &str) -> bool {
         return false;
     };
     if !first.is_ascii_digit() {
+        return false;
+    }
+    // Bloc numérique pur trop long = timestamp/id, pas une version.
+    let digits_only = t.chars().all(|c| c.is_ascii_digit());
+    if digits_only && t.len() >= 8 {
         return false;
     }
     let rest: String = chars.collect();
@@ -585,8 +604,8 @@ pub(crate) const THRESHOLDS: &[(&str, [u32; 2])] = &[
     ("perl", [5, 32]),
     ("java", [11, 0]),
     ("openssl", [1, 1]),
-    ("asp.net", [4, 8]),
-    ("asp", [4, 8]),
+    // ASP/ASP.NET retirés : la version rapportée (4.0.30319) est celle du CLR,
+    // identique pour TOUT le .NET Framework 4.x — signal non exploitable.
     ("node", [18, 0]),
     // CMS
     ("wordpress", [6, 0]),
@@ -742,6 +761,28 @@ mod tests {
     }
 
     #[test]
+    fn test_no_eol_on_wrapper_products() {
+        // mod_perl versionne en 2.0.x — ne doit JAMAIS matcher le seuil perl
+        let comps = vec![
+            TechComponent {
+                name: "mod_perl".into(),
+                version: "2.0.12".into(),
+            },
+            TechComponent {
+                name: "Microsoft HTTPAPI".into(),
+                version: "2.0".into(),
+            },
+        ];
+        assert!(TechStackAuditor::version_verdicts(&comps).is_empty());
+        // mais le produit réel matche toujours
+        let comps = vec![TechComponent {
+            name: "Apache HTTP Server".into(),
+            version: "2.2.15".into(),
+        }];
+        assert_eq!(TechStackAuditor::version_verdicts(&comps).len(), 1);
+    }
+
+    #[test]
     fn test_no_verdict_unknown_component() {
         let comps = vec![TechComponent {
             name: "X-Custom-Thing".into(),
@@ -774,6 +815,11 @@ mod tests {
 
     #[test]
     fn test_version_helpers() {
+        // Cache-buster epoch : JAMAIS une version (bug live uqac.ca JQuery)
+        assert!(!looks_like_version("1715007332"));
+        assert!(!looks_like_version("20260930120000"));
+        // Versions légitimes intactes
+        assert!(looks_like_version("2.4.7"));
         assert_eq!(normalize_version_token("nginx/1.22.1"), "1.22.1");
         assert_eq!(normalize_version_token("Apache/2.4.7 (Ubuntu)"), "2.4.7");
         assert_eq!(normalize_version_token("3"), "3");

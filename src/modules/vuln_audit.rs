@@ -28,7 +28,7 @@ pub struct VulnAuditor;
 
 impl VulnAuditor {
     /// Analyse statique et dynamique du contenu Web rendu et des configurations d'origine
-    pub fn audit(domain: &str, custom_ports: &[u16]) -> VulnAuditResult {
+    pub fn audit(domain: &str, custom_ports: &[u16], reduced_budget: bool) -> VulnAuditResult {
         let mut res = VulnAuditResult {
             html_retrieved: false,
             cdn_scripts_count: 0,
@@ -43,10 +43,31 @@ impl VulnAuditor {
         //    (une cible sans TLS ne doit plus rester sans audit applicatif).
         let hostport = crate::utils::host_with_port(domain, custom_ports);
         let mut html_content = String::new();
+        // Edge-guard web (anomalie C) : derriere un WAF edge-uniforme (Imperva/
+        // Cloudflare/...), le curl fetch attend parfois 600s pour rien (challenge
+        // JS infini). On reduit max-time 5s -> 3s, deadline 600s -> 60s. Le HTML
+        // derriere WAF est de toute facon vide (page challenge), donc le reduire
+        // ne change pas la couverture reelle.
+        let (curl_max_time, curl_deadline) = if reduced_budget {
+            (3u64, 60u64)
+        } else {
+            (5u64, 600u64)
+        };
+        if reduced_budget {
+            eprintln!(
+                "[edge-guard] vuln_audit (curl fetch) budget reduit (max-time {}s, deadline {}s)",
+                curl_max_time, curl_deadline
+            );
+        }
+        let curl_max_time_str = curl_max_time.to_string();
+
         if let Some(content) = ["https", "http"].iter().find_map(|scheme| {
             let target_url = format!("{}://{}/", scheme, hostport);
-            let output =
-                crate::utils::run_tool("curl", &["-s", "-L", "--max-time", "5", &target_url], 600)?;
+            let output = crate::utils::run_tool(
+                "curl",
+                &["-s", "-L", "--max-time", &curl_max_time_str, &target_url],
+                curl_deadline,
+            )?;
             if !output.status.success() {
                 return None;
             }
@@ -76,7 +97,7 @@ impl VulnAuditor {
         }
 
         // E. Audit CORS (Test avec Origin externe)
-        Self::check_cors(domain, custom_ports, &mut res);
+        Self::check_cors(domain, custom_ports, reduced_budget, &mut res);
 
         res
     }
@@ -260,9 +281,22 @@ impl VulnAuditor {
         }
     }
 
-    fn check_cors(domain: &str, custom_ports: &[u16], res: &mut VulnAuditResult) {
+    fn check_cors(
+        domain: &str,
+        custom_ports: &[u16],
+        reduced_budget: bool,
+        res: &mut VulnAuditResult,
+    ) {
         // HTTPS d'abord, fallback HTTP — même règle que le fetch du HTML.
         let hostport = crate::utils::host_with_port(domain, custom_ports);
+        // Edge-guard web (anomalie C) : meme ideologie que pour le HTML fetch
+        // ci-dessus, deadline 300s -> 30s derriere WAF edge.
+        let (cors_max_time, cors_deadline) = if reduced_budget {
+            (2u64, 30u64)
+        } else {
+            (4u64, 300u64)
+        };
+        let cors_max_time_str = cors_max_time.to_string();
         let cors_output = ["https", "http"].iter().find_map(|scheme| {
             let target_url = format!("{}://{}/", scheme, hostport);
             crate::utils::run_tool(
@@ -273,10 +307,10 @@ impl VulnAuditor {
                     "-H",
                     "Origin: https://evil.veridy-test.com",
                     "--max-time",
-                    "4",
+                    &cors_max_time_str,
                     &target_url,
                 ],
-                300,
+                cors_deadline,
             )
             .filter(|o| o.status.success())
         });

@@ -23,7 +23,7 @@ pub struct FfufAuditResult {
 pub struct FfufAuditor;
 
 impl FfufAuditor {
-    pub fn audit(target: &str, custom_ports: &[u16]) -> FfufAuditResult {
+    pub fn audit(target: &str, custom_ports: &[u16], reduced_budget: bool) -> FfufAuditResult {
         let start = Instant::now();
         let pid = std::process::id();
         let tmp_output = format!(
@@ -76,6 +76,25 @@ impl FfufAuditor {
             // jamais une preuve d'existence. Les vrais fichiers sensibles
             //servis sont en 2xx. Les redirections (301/302) restent utiles
             //pour la cartographie. -ac gère le catch-all calibré sur 200.
+
+            // Edge-guard web (anomalie C) : derriere un WAF edge-uniforme (Imperva/
+            // Cloudflare/BitNinja/...), ffuf s acharne sur 2500+ chemins tous bloques
+            // par challenge JS et finit en timeout 120s sans rien trouver. On reduit
+            // maxtime 90s -> 30s, deadline 120s -> 45s. Les vrais fichiers sensibles
+            // caches matchent en <30s.
+            let (maxtime_s, deadline_s) = if reduced_budget {
+                (30u64, 45u64)
+            } else {
+                (90u64, 120u64)
+            };
+            if reduced_budget {
+                eprintln!(
+                    "[edge-guard] ffuf budget reduit (maxtime {}s, deadline {}s)",
+                    maxtime_s, deadline_s
+                );
+            }
+            let maxtime_str = maxtime_s.to_string();
+
             let output = match crate::utils::run_tool(
                 "ffuf",
                 &[
@@ -89,7 +108,7 @@ impl FfufAuditor {
                     "-fc",
                     "404",
                     "-maxtime",
-                    "90",
+                    &maxtime_str,
                     "-rate",
                     "50",
                     "-t",
@@ -100,7 +119,7 @@ impl FfufAuditor {
                     &tmp_output,
                     "-s",
                 ],
-                120,
+                deadline_s,
             ) {
                 Some(o) => o,
                 None => continue,

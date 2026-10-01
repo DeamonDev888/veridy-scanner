@@ -29,6 +29,7 @@ impl SqliAuditor {
                 "-u",
                 url,
                 "--batch",
+                "--random-agent",
                 "--level=2",
                 "--risk=2",
                 "--threads=1",

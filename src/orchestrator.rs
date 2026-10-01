@@ -229,11 +229,22 @@ impl AuditOrchestrator {
         let tracker_vuln = Arc::clone(&tracker);
         let t_vuln = target.clone();
         let vuln_ports = config.custom_ports.clone().unwrap_or_default();
+        // Edge-guard web (anomalie C) : on capture un Arc<OnceLock<bool>>
+        // partage avec la zone du join WAF plus bas. Au moment ou les threads
+        // web (vuln/ffuf/nuclei/nikto/obscura) demarrent, le flag n est pas
+        // encore set : ils consultent via .get().copied().unwrap_or(false)
+        // dans leur closure. Comme le join WAF (~5-10s) precede le spawn des
+        // threads web (voir plus bas), le flag est en pratique toujours set
+        // avant que les modules commencent a travailler.
+        let web_reduced: std::sync::Arc<std::sync::OnceLock<bool>> =
+            std::sync::Arc::new(std::sync::OnceLock::new());
+        let web_reduced_vuln = std::sync::Arc::clone(&web_reduced);
         let handle_vuln = thread::spawn(move || {
             let t0 = Instant::now();
             tracker_vuln.set_running(7, "Recherche de vulnérabilités web génériques...");
             run_guarded(t0, &tracker_vuln, 7, "Vulnérabilités", move || {
-                VulnAuditor::audit(&t_vuln, &vuln_ports)
+                let rb = web_reduced_vuln.get().copied().unwrap_or(false);
+                VulnAuditor::audit(&t_vuln, &vuln_ports, rb)
             })
         });
 
@@ -310,11 +321,13 @@ impl AuditOrchestrator {
             let tracker_c = Arc::clone(&tracker);
             let t = target.clone();
             let ffuf_ports = config.custom_ports.clone().unwrap_or_default();
+            let web_rb = std::sync::Arc::clone(&web_reduced);
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Fuzzing routes sensibles via SecLists quickhits...");
                 run_guarded(t0, &tracker_c, idx, "Ffuf", move || {
-                    FfufAuditor::audit(&t, &ffuf_ports)
+                    let rb = web_rb.get().copied().unwrap_or(false);
+                    FfufAuditor::audit(&t, &ffuf_ports, rb)
                 })
             }))
         } else {
@@ -324,10 +337,14 @@ impl AuditOrchestrator {
         let handle_nuclei = if let Some(idx) = idx_nuclei {
             let tracker_c = Arc::clone(&tracker);
             let t = target.clone();
+            let web_rb = std::sync::Arc::clone(&web_reduced);
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Exécution templates CVEs & failles critiques...");
-                run_guarded(t0, &tracker_c, idx, "Nuclei", || NucleiAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "Nuclei", move || {
+                    let rb = web_rb.get().copied().unwrap_or(false);
+                    NucleiAuditor::audit(&t, rb)
+                })
             }))
         } else {
             None
@@ -336,10 +353,14 @@ impl AuditOrchestrator {
         let handle_nikto = if let Some(idx) = idx_nikto {
             let tracker_c = Arc::clone(&tracker);
             let t = target.clone();
+            let web_rb = std::sync::Arc::clone(&web_reduced);
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Scan des 6700+ fichiers dangereux & config HTTP...");
-                run_guarded(t0, &tracker_c, idx, "Nikto", || NiktoAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "Nikto", move || {
+                    let rb = web_rb.get().copied().unwrap_or(false);
+                    NiktoAuditor::audit(&t, rb)
+                })
             }))
         } else {
             None
@@ -388,10 +409,14 @@ impl AuditOrchestrator {
         let handle_obscura = if let Some(idx) = idx_obscura {
             let tracker_c = Arc::clone(&tracker);
             let t = target.clone();
+            let web_rb = std::sync::Arc::clone(&web_reduced);
             Some(thread::spawn(move || {
                 let t0 = Instant::now();
                 tracker_c.set_running(idx, "Moteur V8 : Rendu DOM & capture PNG...");
-                run_guarded(t0, &tracker_c, idx, "Obscura", || ObscuraAuditor::audit(&t))
+                run_guarded(t0, &tracker_c, idx, "Obscura", move || {
+                    let rb = web_rb.get().copied().unwrap_or(false);
+                    ObscuraAuditor::audit(&t, rb)
+                })
             }))
         } else {
             None
@@ -528,8 +553,34 @@ impl AuditOrchestrator {
             None
         };
 
-        // 6. Récupération des outils Kali en arrière-plan
+        // 6. Récupération des outils Kali en arrière-plan.
+        // Edge-guard web (anomalie C) : on join le WAF EN PREMIER pour calculer
+        // le flag reduced_budget destiné aux modules web longs (vuln, ffuf,
+        // nuclei, nikto, obscura). wafw00f est rapide (~5-10s), le delai
+        // ajoute est negligeable. Les modules ci-dessus (ports, geo, dns,
+        // subs, http, dns_h, whatweb, sslscan, dnstwist, whois, dnsrecon,
+        // theharvester, rustscan, nmap) restent parallises.
         let waf_result = handle_waf.map(|h| h.join().unwrap_or_default());
+        if let Some(ref w) = waf_result {
+            let is_edge = w.waf_detected
+                && matches!(
+                    w.firewall_name.as_str(),
+                    "Imperva"
+                        | "Incapsula"
+                        | "Cloudflare"
+                        | "BitNinja"
+                        | "Akamai"
+                        | "Fastly"
+                        | "Sucuri"
+                );
+            let _ = web_reduced.set(is_edge);
+            if is_edge {
+                eprintln!(
+                    "[edge-guard] {} : WAF {} detecte, budget reduit active pour vuln/ffuf/nuclei/nikto/obscura",
+                    target, w.firewall_name
+                );
+            }
+        }
 
         // === GARDE-FOU EDGE (post-livraison v0.5.5) ==============================
         // Si w a remonte un WAF edge-uniforme (Imperva/Cloudflare/BitNinja), les

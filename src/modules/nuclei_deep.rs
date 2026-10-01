@@ -22,13 +22,31 @@ pub struct NucleiAuditResult {
 pub struct NucleiAuditor;
 
 impl NucleiAuditor {
-    pub fn audit(target: &str) -> NucleiAuditResult {
+    pub fn audit(target: &str, reduced_budget: bool) -> NucleiAuditResult {
         let start = Instant::now();
         // Schéma détecté : les box HTB servent souvent du HTTP pur sur un port
         // exotique — l ancien https:// forcé rendait l outil aveugle (0 findings).
         let hostport = crate::utils::host_with_port(target, &[]);
         let scheme_order = crate::modules::scheme_detect::detect_scheme(&hostport).order;
         let target_url = format!("{}://{}", scheme_order[0], hostport);
+
+        // Edge-guard web (anomalie C) : derriere un WAF edge-uniforme (Imperva/
+        // Cloudflare/BitNinja/Akamai/Fastly/Sucuri), nuclei rame sur les delais
+        // de challenge JS et finit en timeout 300s. On reduit le timeout par
+        // template (5s -> 2s) et la deadline (300s -> 90s). Les CVEs critiques
+        // matchent en quelques secondes, le bruit WAF est coupe net.
+        let (per_template_timeout, deadline_secs) = if reduced_budget {
+            (2, 90u64)
+        } else {
+            (5, 300u64)
+        };
+        if reduced_budget {
+            eprintln!(
+                "[edge-guard] nuclei budget reduit (timeout {}/template, deadline {}s)",
+                per_template_timeout, deadline_secs
+            );
+        }
+        let timeout_str = per_template_timeout.to_string();
 
         let output = match crate::utils::run_tool(
             "nuclei",
@@ -42,10 +60,10 @@ impl NucleiAuditor {
                 "-jsonl",
                 "-silent",
                 "-timeout",
-                "5",
+                &timeout_str,
                 "-duc",
             ],
-            300,
+            deadline_secs,
         ) {
             Some(o) => o,
             None => {
@@ -53,8 +71,16 @@ impl NucleiAuditor {
                     success: false,
                     elapsed_seconds: start.elapsed().as_secs_f32(),
                     items: Vec::new(),
-                    raw_output: "nuclei : timeout (300s) ou binaire introuvable".into(),
-                    summary: "Nuclei interrompu : deadline dépassée".into(),
+                    raw_output: if reduced_budget {
+                        "nuclei : timeout (90s, budget reduit) ou binaire introuvable".into()
+                    } else {
+                        "nuclei : timeout (300s) ou binaire introuvable".into()
+                    },
+                    summary: if reduced_budget {
+                        "Nuclei interrompu : deadline depassee (budget reduit)".into()
+                    } else {
+                        "Nuclei interrompu : deadline depassee".into()
+                    },
                 };
             }
         };
@@ -76,7 +102,7 @@ impl NucleiAuditor {
         }
 
         let summary = format!(
-            "Nuclei a complété l'analyse en {:.2}s : {} constatation(s)/vulnérabilité(s) identifiée(s)",
+            "Nuclei a complete l'analyse en {:.2}s : {} constatation(s)/vulnerabilite(s) identifiee(s)",
             elapsed,
             items.len()
         );
@@ -155,12 +181,12 @@ impl NucleiAuditor {
 
             let rec = if !it.description.is_empty() {
                 format!(
-                    "Description : {}. Remédier à cette vulnérabilité/exposition détectée sur {}.",
+                    "Description : {}. Remedier a cette vulnerabilite/exposition detectee sur {}.",
                     it.description, it.matched_at
                 )
             } else {
                 format!(
-                    "Revue requise pour le template {} détecté à l'adresse {}.",
+                    "Revue requise pour le template {} detecte a l'adresse {}.",
                     it.template_id, it.matched_at
                 )
             };

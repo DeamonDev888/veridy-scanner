@@ -22,13 +22,29 @@ pub struct ObscuraResult {
 pub struct ObscuraAuditor;
 
 impl ObscuraAuditor {
-    pub fn audit(target: &str) -> ObscuraResult {
+    pub fn audit(target: &str, reduced_budget: bool) -> ObscuraResult {
         let start = Instant::now();
         let pid = std::process::id();
         let clean_target = crate::utils::sanitize_target(target);
         let screenshot_file = format!("/tmp/obscura_{}_{}.png", clean_target, pid);
 
         let https_url = format!("https://{}", target);
+        // Edge-guard web (anomalie C) : derriere un WAF edge-uniforme (Imperva/
+        // Cloudflare/...), obscura attend le challenge avant de timeout. On reduit
+        // --timeout 12s -> 6s et deadline 30s -> 18s.
+        let (obscura_timeout, obscura_deadline) = if reduced_budget {
+            (6u64, 18u64)
+        } else {
+            (12u64, 30u64)
+        };
+        if reduced_budget {
+            eprintln!(
+                "[edge-guard] obscura budget reduit (timeout {}s, deadline {}s)",
+                obscura_timeout, obscura_deadline
+            );
+        }
+        let obscura_timeout_str = obscura_timeout.to_string();
+
         let mut output = crate::utils::run_tool(
             "obscura",
             &[
@@ -39,9 +55,9 @@ impl ObscuraAuditor {
                 "--screenshot",
                 &screenshot_file,
                 "--timeout",
-                "12",
+                &obscura_timeout_str,
             ],
-            30,
+            obscura_deadline,
         );
 
         let used_http = match &output {
@@ -57,9 +73,9 @@ impl ObscuraAuditor {
                         "--screenshot",
                         &screenshot_file,
                         "--timeout",
-                        "12",
+                        &obscura_timeout_str,
                     ],
-                    30,
+                    obscura_deadline,
                 ) {
                     if o_http.status.success() {
                         output = Some(o_http);

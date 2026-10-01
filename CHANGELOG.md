@@ -4,6 +4,16 @@ Toutes les modifications notables de `veridy_scanner` sont documentées ici.
 
 Le format suit [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 
+## [0.5.8] — 2026-10-01
+
+### Added
+- **Module `elasticx`** (18e module d'impact) : preuve d'exposition publique d'un service Elasticsearch (port 9200) par UNE requête HTTP GET `/` — la racine divulgue spontanément `cluster_name` et `version` sans auth (aucune recherche, aucune écriture, zéro credential). Verdicts : `ELASTIC_EXPOSE_PUBLIC` / `ELASTIC_AUTH_REQUISE` (401/403 JSON) / `ELASTIC_EDGE_FANTOME` / `ELASTIC_INJOIGNABLE`. Dispatché automatiquement par chainx sur finding « Port de base de données 9200 (Elasticsearch) exposé publiquement » (le port 9200 rejoint la liste DB de findings.rs). Version masquée majeur.mineur.x, IPv4 masquées, timeout dur 6 s, persistance audit_impact.
+
+### Fixed
+- **Verdict elasticx INJOIGNABLE vs EDGE_FANTOME** : DNS KO / TCP refusé / timeout = `INJOIGNABLE` (rien n'écoute) ; seul le silence après connexion acceptée = `EDGE_FANTOME`.
+- **sqlmap sans `--random-agent`** : l'UA sqlmap identifiable était bloqué par les WAF avant la première requête.
+- **smb_audit `success` codé à `true`** : désormais calculé réel (true uniquement si nmap/smbclient/rpcclient ont produit au moins un artefact : partages, utilisateurs, groupes, version ou OS).
+
 ## [0.5.7] — 2026-09-30
 
 ### Fixed

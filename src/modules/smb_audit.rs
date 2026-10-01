@@ -40,7 +40,9 @@ impl SmbAuditor {
     pub fn audit(target: &str) -> SmbAuditResult {
         let start = Instant::now();
         let mut res = SmbAuditResult {
-            success: true,
+            // success recalculé en fin d'audit : true uniquement si au moins
+            // un outil (nmap/smbclient/rpcclient) a produit un artefact.
+            success: false,
             brute_force_feasible: false,
             elapsed_seconds: 0.0,
             target: target.to_string(),
@@ -256,6 +258,11 @@ impl SmbAuditor {
             ));
         }
 
+        res.success = !res.shares.is_empty()
+            || !res.users.is_empty()
+            || !res.groups.is_empty()
+            || res.smb_version.is_some()
+            || res.os.is_some();
         res.elapsed_seconds = start.elapsed().as_secs_f32();
         res
     }

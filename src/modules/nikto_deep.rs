@@ -23,7 +23,7 @@ pub struct NiktoAuditResult {
 pub struct NiktoAuditor;
 
 impl NiktoAuditor {
-    pub fn audit(target: &str) -> NiktoAuditResult {
+    pub fn audit(target: &str, reduced_budget: bool) -> NiktoAuditResult {
         let start = Instant::now();
         // Schéma détecté : les box HTB servent souvent du HTTP pur sur un port
         // exotique — l ancien https:// forcé rendait l outil aveugle (0 findings).
@@ -37,13 +37,31 @@ impl NiktoAuditor {
             pid
         );
 
+        // Edge-guard web (anomalie C) : derriere un WAF edge-uniforme (Imperva/
+        // Cloudflare/...), nikto teste 6700+ items sur une cible bloquee par
+        // challenge JS et bloque sur maxtime 35s. On reduit maxtime 35s -> 12s
+        // et deadline 60s -> 30s. Les vraies trouvailles nikto matchent en
+        // <10s ; au-dela c'est du bruit WAF.
+        let (maxtime_secs, deadline_secs) = if reduced_budget {
+            (12u64, 30u64)
+        } else {
+            (35u64, 60u64)
+        };
+        if reduced_budget {
+            eprintln!(
+                "[edge-guard] nikto budget reduit (maxtime {}s, deadline {}s)",
+                maxtime_secs, deadline_secs
+            );
+        }
+        let maxtime_arg = format!("{}s", maxtime_secs);
+
         let output = match crate::utils::run_tool(
             "nikto",
             &[
                 "-host",
                 &target_url,
                 "-maxtime",
-                "35s",
+                &maxtime_arg,
                 "-Tuning",
                 "1,2,3,b",
                 "-Format",
@@ -51,7 +69,7 @@ impl NiktoAuditor {
                 "-output",
                 &tmp_output,
             ],
-            60,
+            deadline_secs,
         ) {
             Some(o) => o,
             None => {
@@ -59,8 +77,16 @@ impl NiktoAuditor {
                     success: false,
                     elapsed_seconds: start.elapsed().as_secs_f32(),
                     vulnerabilities: Vec::new(),
-                    raw_output: "nikto : timeout (60s) ou binaire introuvable".into(),
-                    summary: "Nikto interrompu : deadline dépassée".into(),
+                    raw_output: if reduced_budget {
+                        "nikto : timeout (30s, budget reduit) ou binaire introuvable".into()
+                    } else {
+                        "nikto : timeout (60s) ou binaire introuvable".into()
+                    },
+                    summary: if reduced_budget {
+                        "Nikto interrompu : deadline depassee (budget reduit)".into()
+                    } else {
+                        "Nikto interrompu : deadline depassee".into()
+                    },
                 };
             }
         };
@@ -74,7 +100,7 @@ impl NiktoAuditor {
 
         let vulnerabilities = Self::parse_nikto_json(&raw_json);
         let summary = format!(
-            "Nikto a terminé l'analyse web en {:.2}s : {} item(s) et anomalie(s) répertorié(s)",
+            "Nikto a termine l'analyse web en {:.2}s : {} item(s) et anomalie(s) repertorie(s)",
             elapsed,
             vulnerabilities.len()
         );
@@ -147,9 +173,9 @@ impl NiktoAuditor {
             };
 
             let rec = if !v.references.is_empty() {
-                format!("{} (Référence : {})", v.msg, v.references)
+                format!("{} (Reference : {})", v.msg, v.references)
             } else {
-                format!("Examiner la route '{}' signalée par Nikto.", v.url)
+                format!("Examiner la route '{}' signalee par Nikto.", v.url)
             };
 
             let method_prefix = if !v.method.is_empty() {
